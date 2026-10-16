@@ -286,7 +286,7 @@ function ActivityPanel({ data }: any) {
         <Stat
           label="HSUH active"
           value={count(h?.active_turns)}
-          note={`${h?.workers ?? "—"} / ${h?.max_workers ?? 2} worker processes`}
+          note={h?.native_control ? "Native gateway tasks" : `${h?.workers ?? "—"} / ${h?.max_workers ?? 2} worker processes`}
         />
       </dl>
       <div className="section-subhead">
@@ -317,6 +317,7 @@ function ActivityPanel({ data }: any) {
                 value={`${short(s.input_tokens)} / ${short(s.output_tokens)}`}
               />
               <Pair label="Session" value={s.id.slice(0, 12)} />
+              {h?.native_control && <button className="quiet" onClick={() => window.dispatchEvent(new CustomEvent('hsuh:open-session', {detail:s.id}))}>Open conversation</button>}
             </div>
           </details>
         ))}

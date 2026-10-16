@@ -1,5 +1,39 @@
 # Verification record
 
+## Native Hermes control, 2026-10-16
+
+- **48 Linux Python tests pass**, including eleven native adapter regressions for
+  restart recovery, lost-admission idempotency, exact-run stop ownership, pending
+  approval IDs, private event projection and owner/origin/body guards. Three
+  production-controller scenarios cover deferred drafts, pending conversation
+  creation and navigation during initial hydration (five cases). OpenUI parser
+  cases pass.
+- A real native terminal task returned the requested harmless marker; recreating
+  the adapter recovered its exact task and persisted transcript. The runtime
+  remained the configured model/provider.
+- Hosted owner login reached Work & tools. A real terminal sleep task was stopped
+  from that panel, native cancellation settled and its completion marker was not
+  produced. Anonymous `/api/control` is denied. The ledger and local service key
+  file have mode 0600.
+- Desktop and 390px phone layouts were visually inspected; no document horizontal
+  overflow and all five phone navigation buttons are at least 44px high.
+- The installed native API's unattended-code approval mismatch was reproduced
+  with a harmless print request and a failing native regression. The included
+  compatibility patch passes **254 native approval tests** in an isolated source
+  checkout, preserving unattended, webhook, cron and single-query behavior. The
+  first run from inside the live profile was blocked in three existing tests by
+  the native real-home I/O guard; the isolated run passes all 254.
+- Hosted guidance reached the exact native run and its final response included
+  the added marker. That same run was observed active immediately before an HSUH
+  service restart, recovered active afterward, and then completed normally.
+- The user explicitly chose to interrupt the other active native run for the
+  compatibility reload. Native stop settled before gateway restart. Both Telegram
+  and API returned connected. A real native approval card displayed the exact
+  pending operation; Deny was submitted and Hermes confirmed no execution or
+  workaround. The stricter manual test mode was restored to the original smart
+  mode, and saved permanent approvals were verified unchanged.
+- Independent security review remains pending; tests do not imply that review.
+
 ## Operations control centre and OpenUI, 2026-10-16
 
 - The final operations candidate passed **37 Python tests on Linux**, including

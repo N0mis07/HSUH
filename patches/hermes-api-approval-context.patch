@@ -1,0 +1,51 @@
+--- a/tools/approval_context.py
++++ b/tools/approval_context.py
+@@ -143,7 +143,13 @@
+     blocks the session for the full approval timeout (60-300s) and then fails closed anyway — the deadlock
+     in #37284/#87509.
+     """
+-    return _get_session_platform() in _UNATTENDED_APPROVAL_PLATFORMS
++    platform = _get_session_platform()
++    if platform == "api_server":
++        # Durable runs / streaming chat register a session-scoped human approval
++        # surface. Plain API calls still fail closed under unattended_mode.
++        from tools.approval import _gateway_notify_cb
++        return _gateway_notify_cb(get_current_session_key()) is None
++    return platform in _UNATTENDED_APPROVAL_PLATFORMS
+ 
+ 
+ # Platforms where a *registered* gateway notify callback still does not mean a human can answer:
+--- /dev/null
++++ b/tests/tools/test_api_approval_presence.py
+@@ -0,0 +1,31 @@
++"""A durable API run can answer an approval; plain API and webhook calls cannot."""
++import pytest
++import tools.approval as approval
++from tools import approval_context
++
++
++@pytest.mark.parametrize('guard', ['execute_code','tool','shell'])
++def test_answerable_api_run_reaches_human_gate(monkeypatch, guard):
++    monkeypatch.setenv('HERMES_SESSION_PLATFORM','api_server')
++    monkeypatch.setenv('HERMES_EXEC_ASK','1')
++    for name in ('HERMES_CRON_SESSION','HERMES_SINGLE_QUERY_SESSION','HERMES_INTERACTIVE','HERMES_GATEWAY_SESSION'):
++        monkeypatch.delenv(name,raising=False)
++    monkeypatch.setattr(approval,'_YOLO_MODE_FROZEN',False)
++    monkeypatch.setattr(approval_context,'_get_approval_mode',lambda:'manual')
++    monkeypatch.setattr(approval,'_command_matches_permanent_allowlist',lambda command:False)
++    calls=[]
++    monkeypatch.setattr(approval,'_human_decision',lambda *a,**kw: calls.append(kw) or {'approved':False,'message':'human gate reached'})
++    token=approval_context.set_current_session_key('test-answerable-api')
++    approval.register_gateway_notify('test-answerable-api',lambda event:None)
++    try:
++        if guard=='execute_code':
++            result=approval.check_execute_code_guard('print("fixture")','local')
++        elif guard=='tool':
++            result=approval.request_tool_approval('fixture','fixture approval')
++        else:
++            result=approval.check_all_command_guards('sudo systemctl restart fixture','local')
++        assert result['message']=='human gate reached'
++        assert len(calls)==1
++    finally:
++        approval.unregister_gateway_notify('test-answerable-api')
++        approval_context.reset_current_session_key(token)

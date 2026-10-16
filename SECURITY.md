@@ -2,7 +2,29 @@
 
 ## Scope and threat boundary
 
-HSUH is a **single-owner VPS client**, not a multi-tenant service. It runs with the VPS user's permissions; never expose it with arbitrary agent tools enabled. The initial integration permits only Hermes `clarify`. Existing native Hermes sessions, delegated jobs and credential vaults are not bridged.
+HSUH is a **single-owner VPS client**, not a multi-tenant service. Native control
+uses the VPS user's Hermes permissions and requires the owner gate on every route.
+Never expose it anonymously. The library fallback permits only `clarify`; opt-in
+native mode bridges tools, sessions, run-specific controls, approvals and schedules.
+Website credential collection remains disabled.
+
+Native mode keeps the service bearer key server-side, uses a fixed loopback
+upstream and explicit endpoint allowlist, and retains exact-origin/header/body
+guards. Actions resolve through the server-owned workspace ledger and require
+the exact current task ID. Approvals also require the exact pending request ID
+and a native-offered choice. No blanket or permanent approval is exposed. A stop
+receipt is not cancellation completion. Tool events omit arguments, raw results
+and private reasoning. Native-redacted approval commands and public assistant
+commentary render as escaped text; generated OpenUI cannot invoke controls.
+
+The mode-0600 native ledger stores membership, task receipts and a temporary outbox
+for uncertain admission. Replays reuse native durable idempotency keys and stop
+before their retention window expires. Native transcripts, memory, context,
+provider fallbacks, delegation, diagnostics and retention remain Hermes-owned.
+Removing a workspace chat retains the native transcript. Web shutdown disconnects
+observers; it never kills the gateway or unrelated Telegram work. Operators own
+backups and native retention. The worker isolation/temporary diagnostic disposal
+described below applies to **library-only mode**, not native gateway execution.
 
 - Default bind: `127.0.0.1`, exact loopback Host allowlist, same-origin mutations, custom request header, process-local HttpOnly/SameSite session cookie.
 - Public mode: exact HTTPS origin; Cloudflare Access RS256 JWT validation with pinned team issuer, application audience, expiry/issued-at and signed owner email. Every path is protected. Edge Access must also restrict the owner. Never trust an email header alone or publish loopback mode behind an anonymous proxy.

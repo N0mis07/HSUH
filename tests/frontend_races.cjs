@@ -12,25 +12,30 @@ class Element {
   focus() {}
   querySelectorAll() { return []; }
 }
-async function fixture() {
+async function fixture({navigationDuringLoad=false}={}) {
   const elements = new Map();
   const get = selector => {
     if(!elements.has(selector)) elements.set(selector, new Element());
     return elements.get(selector);
   };
   let resolvePost, posted;
+  let resolveCreate;
+  const creation=new Promise(resolve=>{resolveCreate=resolve;});
   const pending = new Promise(resolve => { resolvePost=resolve; });
   const chat = id => ({id,title:id,messages:[],tasks:[],question:null,task:null,revision:0});
   const response = data => ({ok:true,json:async()=>data});
   const document = {querySelector:get,querySelectorAll:()=>[],createElement:()=>new Element(),addEventListener(){}};
+  let firstList=true;
   const fetch = async (url, options) => {
+    if(url==='/api/chats' && options.method==='GET' && firstList){firstList=false;if(navigationDuringLoad)get('.workspace').dataset.view='work';}
+    if(url==='/api/chats' && options.method==='POST')return creation;
     if(url==='/api/chats/a/messages' && options.method==='POST') {
       posted=JSON.parse(options.body);
       return pending;
     }
     const data = {
       '/api/chats': [chat('a'),chat('b')],
-      '/api/chats/a':chat('a'), '/api/chats/b':chat('b'),
+      '/api/chats/a':chat('a'), '/api/chats/b':chat('b'), '/api/chats/c':chat('c'),
       '/api/status':{active:0,access:'Fixture'},
       '/api/activity':{available:false,gateway:{available:false},hsuh:{conversations:2,active_turns:0}},
       '/api/telemetry':{memory:{used:1,total:2,available:1},swap:{used:0,total:1},processes:[]},
@@ -41,10 +46,10 @@ async function fixture() {
   };
   const source=fs.readFileSync(path.join(__dirname,'../hsuh/static/app.js'),'utf8');
   const context=vm.createContext({document,fetch,navigator:{},window:{addEventListener(){}},setInterval(){},setTimeout(){},console});
-  const controller=await new vm.Script('(async()=>{'+source+'\nreturn {selectChat};})()').runInContext(context);
+  const controller=await new vm.Script('(async()=>{'+source+'\nreturn {selectChat,newChat};})()').runInContext(context);
   const input = value => { get('#message').value=value; get('#message').oninput?.({}); };
   const send = () => get('#composer').onsubmit({preventDefault(){}});
-  return {get,input,send,controller,posted:()=>posted,resolve:()=>resolvePost(response({}))};
+  return {get,input,send,controller,posted:()=>posted,resolve:()=>resolvePost(response({})),resolveCreate:()=>resolveCreate(response(chat('c')))};
 }
 async function main() {
   {
@@ -77,6 +82,20 @@ async function main() {
     f.resolve(); await sending;
     assert.equal(f.get('#message').value,'Same text', 'Draft generation, not just text equality, owns cleanup');
   }
-  console.log('Frontend deferred-send races: 3 scenarios passed (full production app.js).');
+  {
+    const f=await fixture();
+    const creating=f.controller.newChat();
+    f.input('This belongs to the new conversation');
+    await f.send();
+    assert.equal(f.posted(),undefined,'Sending while creation is pending must never target the previous conversation');
+    assert.equal(f.get('#send').disabled,true);
+    f.resolveCreate();await creating;
+    assert.equal(f.get('#send').disabled,false);
+  }
+  {
+    const f=await fixture({navigationDuringLoad:true});
+    assert.equal(f.get('.workspace').dataset.view,'work','Initial chat hydration must preserve a view selected during loading');
+  }
+  console.log('Frontend conversation races: 5 scenarios passed (full production app.js).');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
