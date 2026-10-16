@@ -1,5 +1,28 @@
 # Verification record
 
+## ZeroFrame sign-in follow-up, 2026-10-16
+
+- Added optional owner-pinned ZeroFrame ES256 SSO, reusing the issuer's existing
+  passkeys and phone/QR/device invitation flow instead of requiring GitHub OAuth.
+- The final candidate passed **34 Python tests on Linux**, including nine new SSO
+  tests covering a complete signed round trip, wrong owner/key/issuer/audience,
+  expiry, state/cookie binding, single-use and simultaneous callbacks, oversized
+  requests, denied APIs/assets and unavailable-key-server throttling.
+- Browser syntax checks, the three existing frontend race scenarios, diff checks
+  and the working-tree/history publication guard passed. The SSO tests also pass
+  on Windows; existing Linux process-group tests require Linux (`os.killpg`).
+- On the operator-hosted HTTPS site, an existing real passkey session returned
+  through the issuer and opened HSUH. The UI reported `ZeroFrame passkey`; a real
+  Hermes turn completed with `HSUH_PASSKEY_OK`. Anonymous root navigation redirects
+  to the configured issuer; protected API/assets return 401; a forged callback
+  returns 403. Legacy edge authentication was replaced only after confirming the
+  origin gate, with private rollback copies retained.
+- This verifies reuse of an existing passkey session. A new physical phone QR
+  scan and a second live issuer account were not exercised; wrong-owner rejection
+  is covered with generated signing keys. Tests are not independent review.
+
+The records below describe earlier artifacts and their acceptance boundaries.
+
 Initial local checks were run on Linux with Python 3.14.7 and the existing Hermes source checkout at `297552a9d646119871391d202509822cd86330df`. The web dependency versions are pinned in `requirements.txt`; no frontend build/install was required.
 
 ## Executed acceptance

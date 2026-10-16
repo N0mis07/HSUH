@@ -39,7 +39,7 @@ HSUH retains only user/final text for the next turn, combining clarified input i
 
 Required upstream: `http://127.0.0.1:8110`, preserving Host. The launcher has no non-loopback bind flag.
 
-Optional public mode requires all five operator settings:
+The default Cloudflare Access public mode uses these operator settings:
 
 - `HSUH_PUBLIC_ORIGIN`: exact HTTPS origin, e.g. `https://hsuh.example.com`.
 - `HSUH_ACCESS_TEAM`: Cloudflare Access team slug only.
@@ -50,3 +50,14 @@ Optional public mode requires all five operator settings:
 The first four are fail-closed. A signed Access JWT must validate issuer/audience/algorithm/expiry and owner email on every request; merely being logged into an OAuth provider is insufficient. Public proxying of default loopback mode is prohibited. No trust of proxy-supplied email headers or arbitrary `X-Forwarded-*` headers.
 
 Keep Cloudflare DNS/routes/tunnel configuration separate and never overwrite unrelated records. Hosted owner authentication and non-owner denial require actual edge testing, not just local cryptographic fixtures. No installer or execution is required on Windows. PWA is online-only and intentionally retains no private response caches.
+
+An existing ZeroFrame issuer can replace Access with `HSUH_AUTH_MODE=zeroframe`,
+`HSUH_PUBLIC_ORIGIN`, `HSUH_SSO_ISSUER` and `HSUH_SSO_OWNER_ID`. `sso.py` verifies
+ES256 passes using the issuer's public keys, exact audience/issuer, owner subject,
+role, issued-at and expiry. The issuer owns passkeys, QR/device invitations and
+site permissions. HSUH adds owner authorization and a bounded, ten-minute,
+single-use challenge stored server-side and in a Secure/HttpOnly host-only cookie.
+The signed nonce must match that cookie; the final path comes from server state.
+The callback has a separate bounded cross-origin form POST entry; ordinary API
+requests retain their existing same-origin/header/body checks. A public pass is
+required for assets and APIs too, and the loopback Host is refused in this mode.

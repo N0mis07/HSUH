@@ -11,6 +11,7 @@ An original, compact browser workspace for [Hermes Agent](https://github.com/Nou
 - Read-only native provider quota windows via `hermes usage --json`; optional existing Aperture quota-bucket discovery. Sources, fetch times, caching and unavailable states are visible. Aperture budgets are not ChatGPT subscription quota or invoices.
 - Responsive desktop/phone UI and an online-only installable PWA, with an original small mascot, Mote. No client-side conversation storage, offline cache or push notifications.
 - Optional public HTTPS entry through **Cloudflare Access**, with server-side RS256 JWT/issuer/audience/expiry validation **and an explicit owner email allowlist**. Other authenticated OAuth users cannot access the VPS.
+- Alternatively, reuse an existing **ZeroFrame passkey login**, including its phone/QR and device invitation flow. Signed ES256 passes must match this site and the configured owner's immutable ID. Other people on the same issuer cannot open HSUH.
 
 ## Deliberate limitations
 
@@ -41,6 +42,41 @@ The launcher **always binds `127.0.0.1`**. Open `http://127.0.0.1:8110` locally.
 For Aperture, set `HSUH_APERTURE_URL=https://your-private-aperture-host` to reuse an existing authorized connection. This is optional; HSUH only reads `/api/quotas`, never changes routing, quotas, grants or retention. No bucket schema is guessed: the current implementation reports count/absence and links to authoritative balances if buckets exist.
 
 ## Authenticated phone/computer hosting
+
+### Existing ZeroFrame passkeys
+
+For a hostname served by your existing ZeroFrame issuer, reuse its sign-in instead
+of creating a GitHub OAuth application. The issuer must support `/sso` and publish
+its public ES256 keys at `/.well-known/zf-sso`:
+
+```sh
+export HSUH_PUBLIC_ORIGIN=https://hsuh.example.com
+export HSUH_AUTH_MODE=zeroframe
+export HSUH_SSO_ISSUER=https://login.example.com
+export HSUH_SSO_OWNER_ID=your-owner-id
+python -m hsuh --port 8110
+```
+
+Open HSUH normally. It redirects to the existing passkey page and returns after
+sign-in; an existing issuer session returns without another prompt. Phone/QR
+availability comes from the existing passkey authenticator and issuer invitations.
+No passkeys or GitHub credentials are collected by HSUH.
+
+The issuer must grant this owner access to HSUH. The app additionally pins the
+owner ID, verifies the issuer, exact audience, signature, role and one-hour maximum
+lifetime on every request, and binds the callback to a ten-minute, single-use
+browser challenge. Passes are kept in Secure/HttpOnly host-only cookies. APIs and
+assets remain unavailable anonymously. Mutations still require the exact HSUH
+origin and custom request header.
+
+Keep the tunnel pointed at loopback with the original public Host. When migrating
+from Cloudflare Access, **first deploy and verify the ZeroFrame gate at the origin**,
+then replace the exact hostname's Access/tunnel checks. Keep private rollback
+copies of the prior configuration; never disable authentication on other hosts.
+ZeroFrame mode refuses missing configuration and does not inherit loopback access.
+Restarting the app clears its memory-only chats; check for active work first.
+
+### Cloudflare Access alternative
 
 Use a Cloudflare Tunnel whose only upstream is `http://127.0.0.1:8110`. Keep the original public Host header. Create a **self-hosted Cloudflare Access application** covering the entire hostname, including `/api/*` and assets, with your OAuth identity provider and an allow policy restricted to the owner. Do not deploy an Allow Everyone or bypass policy.
 

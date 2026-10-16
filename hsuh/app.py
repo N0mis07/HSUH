@@ -27,12 +27,16 @@ class Answers(BaseModel):
 
 class LocalBoundary:
     """Host, origin, cookie and streamed body checks before JSON parsing."""
-    def __init__(self, app, token, port, access=None):
+    def __init__(self, app, token, port, access=None, sso=None):
         self.app, self.token = app, token
         self.hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
         self.access = access
+        self.sso = sso
         if access:
             self.hosts.add(access.host)
+        if sso:
+            # Public SSO never inherits the anonymous loopback entry point.
+            self.hosts = {sso.host}
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
@@ -43,6 +47,19 @@ class LocalBoundary:
             await JSONResponse({'detail': detail}, status_code=status, headers={'Cache-Control':'no-store'})(scope, receive, send)
         if host not in self.hosts:
             return await reject(400, 'Loopback host required')
+        if self.sso:
+            from .sso import PASS_COOKIE, cookies
+            if scope['path'] == '/sso/callback':
+                response = await self.sso.callback(scope, headers, receive)
+                return await response(scope, receive, send)
+            if scope['path'] == '/auth/login' and scope['method'] == 'GET':
+                return await self.sso.start()(scope, receive, send)
+            if not await self.sso.verify(cookies(headers).get(PASS_COOKIE)):
+                if (scope['method'] == 'GET' and (scope['path'] == '/'
+                        or (not scope['path'].startswith('/api/')
+                            and b'text/html' in headers.get(b'accept', b'')))):
+                    return await self.sso.start(scope['path'])(scope, receive, send)
+                return await reject(401, 'Sign in through ZeroFrame to open HSUH')
         if self.access:
             assertion = headers.get(b'cf-access-jwt-assertion', b'').decode('latin1')
             if not await self.access.allows(assertion):
@@ -59,7 +76,8 @@ class LocalBoundary:
             if not good:
                 return await reject(401, 'Open HSUH in this browser first')
         if scope['method'] not in {'GET', 'HEAD'}:
-            origin = self.access.origin if self.access and host == self.access.host else f'http://{host}'
+            gate = self.sso or self.access
+            origin = gate.origin if gate and host == gate.host else f'http://{host}'
             if headers.get(b'origin') != origin.encode() or headers.get(b'x-hsuh-request') != b'1':
                 return await reject(403, 'Same-origin request required')
             body = bytearray()
@@ -93,7 +111,8 @@ class LocalBoundary:
         await self.app(scope, receive, safe_send)
 
 
-def create_app(port=8110, public_origin=None, access_team=None, access_audience=None, owner_email=None):
+def create_app(port=8110, public_origin=None, access_team=None, access_audience=None, owner_email=None,
+               auth_mode=None, sso_issuer=None, sso_owner_id=None):
     from .chat import ChatManager
     from .quota import QuotaReader
     from .access import AccessGate
@@ -101,9 +120,17 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
     quota = QuotaReader()
     token = secrets.token_urlsafe(32)
     public_origin = public_origin or os.environ.get('HSUH_PUBLIC_ORIGIN')
+    auth_mode = auth_mode or os.environ.get('HSUH_AUTH_MODE', 'access')
+    if auth_mode not in {'access', 'zeroframe'}:
+        raise ValueError('Unknown HSUH_AUTH_MODE')
+    sso = None
+    if auth_mode == 'zeroframe':
+        from .sso import ZeroFrameGate
+        sso = ZeroFrameGate(public_origin, sso_issuer or os.environ.get('HSUH_SSO_ISSUER'),
+                            sso_owner_id or os.environ.get('HSUH_SSO_OWNER_ID'))
     access = AccessGate(public_origin, access_team or os.environ.get('HSUH_ACCESS_TEAM'),
                         access_audience or os.environ.get('HSUH_ACCESS_AUDIENCE'),
-                        owner_email or os.environ.get('HSUH_OWNER_EMAIL')) if public_origin else None
+                        owner_email or os.environ.get('HSUH_OWNER_EMAIL')) if public_origin and not sso else None
 
     @asynccontextmanager
     async def lifespan(app):
@@ -112,13 +139,14 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.manager = manager
-    app.add_middleware(LocalBoundary, token=token, port=port, access=access)
+    app.state.sso = sso
+    app.add_middleware(LocalBoundary, token=token, port=port, access=access, sso=sso)
 
     @app.get('/')
     async def index():
         r = FileResponse(STATIC / 'index.html')
         # HTTP is only allowed over loopback / an encrypted SSH tunnel. No public TLS proxy trust.
-        r.set_cookie('hsuh_session', token, httponly=True, samesite='strict', secure=bool(access), path='/')
+        r.set_cookie('hsuh_session', token, httponly=True, samesite='strict', secure=bool(access or sso), path='/')
         return r
 
     @app.get('/assets/{name}')
@@ -142,7 +170,7 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
                 'credentials': {'enabled':False, 'reason':'Native vault bridge is not wired. Do not enter secrets in chat.'},
                 'model': manager.model, 'active': manager.active_count,
                 'background_jobs':{'scope':'HSUH conversation turns only', 'native_delegated_jobs':'unavailable: no gateway job bridge connected'},
-                'access':'Cloudflare Access JWT' if access else 'Loopback only'}
+                'access':'ZeroFrame passkey' if sso else 'Cloudflare Access JWT' if access else 'Loopback only'}
 
     @app.get('/api/quota')
     async def get_quota():
