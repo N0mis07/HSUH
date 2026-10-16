@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import signal
 import sys
+import tempfile
 import time
 import uuid
 
@@ -51,7 +52,7 @@ class ChatManager:
         text = message.strip()
         if not text:
             raise HTTPException(422, 'Message is empty')
-        if c['task'] and c['task']['state'] in BUSY:
+        if (c['task'] and c['task']['state'] in BUSY) or (chat_id in self.work and not self.work[chat_id].done()):
             raise HTTPException(409, 'This conversation already has an active turn')
         if len(c['tasks']) >= 30:
             raise HTTPException(409, '30-turn limit; start a new conversation')
@@ -64,21 +65,31 @@ class ChatManager:
         if len(c['tasks']) == 1:
             c['title'] = ' '.join(text.split())[:52]
         c['revision'] += 1
-        self.work[chat_id] = asyncio.create_task(self._run(c, text))
+        self.work[chat_id] = asyncio.create_task(self._run(c, text, task))
         return self.get(chat_id)
 
-    async def _run(self, c, message):
+    async def _run(self, c, message, task):
+        # Capture ownership at submission, never from mutable c['task'] after an await.
         p = None
-        task = c['task']
+        diagnostics = None
+        acquired = False
+        content = None
+        outcome = {'state':'failed', 'summary':'Hermes did not complete this turn. Check native provider sign-in and compatibility; no response was fabricated.'}
         try:
-            async with self.slots:
-                task.update(state='running', started_at=time.time(), summary='Starting Hermes')
-                c['revision'] += 1
+            await self.slots.acquire()
+            acquired = True
+            task.update(state='running', started_at=time.time(), summary='Starting Hermes')
+            c['revision'] += 1
+            # Queue time is excluded; one deadline covers startup, pipes, input waits and exit.
+            async with asyncio.timeout(240):
                 # Never inherit a parent's subagent/session identity or model overrides.
                 env = {k:v for k,v in os.environ.items() if not k.startswith('HERMES_')}
                 env['HERMES_HOME'] = str(Path.home() / '.hermes')
                 root = Path(os.environ.get('HSUH_HERMES_ROOT', str(Path.home()/'.hermes/hermes-agent'))).resolve()
                 env['HSUH_HERMES_ROOT'] = str(root)
+                # Parent owns disposal even when the worker must be killed. No profile edits.
+                diagnostics = tempfile.TemporaryDirectory(prefix='hsuh-diagnostics-')
+                env['HSUH_DIAGNOSTICS_DIR'] = diagnostics.name
                 p = await asyncio.create_subprocess_exec(sys.executable, str(Path(__file__).with_name('worker.py')),
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                     env=env, cwd=str(Path(__file__).parent.parent), start_new_session=True, limit=1048576)
@@ -87,47 +98,44 @@ class ChatManager:
                     raise RuntimeError('Worker pipes are unavailable')
                 p.stdin.write((json.dumps({'message':message, 'history':c['history']})+'\n').encode())
                 await p.stdin.drain()
-                async with asyncio.timeout(240):
-                    while line := await p.stdout.readline():
-                        event = json.loads(line)
-                        kind = event.get('type')
-                        if kind == 'ready':
-                            self.model = {'model':event['model'], 'provider':event['provider'], 'reasoning_effort':event['reasoning_effort']}
-                            task.update(summary='Hermes is responding')
-                        elif kind == 'question':
-                            c['question'] = {'id':uuid.uuid4().hex, 'questions':event['questions']}
-                            task.update(state='pending_input', summary='Waiting for your answer')
-                        elif kind == 'final':
-                            content = event.get('content')
-                            if not isinstance(content, str) or not content.strip() or len(content) > 100000:
-                                raise ValueError('Invalid final response')
-                            msg = {'id':uuid.uuid4().hex, 'role':'assistant', 'content':content, 'at':time.time()}
-                            c['messages'].append(msg)
-                            # No reasoning/tool results in HSUH history. Clarification text is included as user input.
-                            context = message
-                            if c['pending_clarifications']:
-                                context += '\n\nClarifications supplied during this turn:\n' + '\n'.join(c['pending_clarifications'])
-                            c['history'].extend([{'role':'user','content':context}, {'role':'assistant','content':content}])
-                            task.update(state='completed', summary='Response received', result_message_id=msg['id'], ended_at=time.time())
-                        elif kind == 'error':
-                            raise RuntimeError('Hermes worker failed')
-                        else:
-                            raise ValueError('Unknown worker event')
-                        c['revision'] += 1
-                    await p.wait()
-                    if task['state'] != 'completed' or p.returncode != 0:
-                        raise RuntimeError('Worker ended without a successful response')
+                while line := await p.stdout.readline():
+                    event = json.loads(line)
+                    if content is not None:
+                        raise ValueError('Worker event after final response')
+                    kind = event.get('type')
+                    if kind == 'ready':
+                        self.model = {'model':event['model'], 'provider':event['provider'], 'reasoning_effort':event['reasoning_effort']}
+                        task.update(summary='Hermes is responding')
+                    elif kind == 'question':
+                        if c['question'] is not None:
+                            raise ValueError('Worker already has a pending question')
+                        c['question'] = {'id':uuid.uuid4().hex, 'questions':event['questions']}
+                        task.update(state='pending_input', summary='Waiting for your answer')
+                    elif kind == 'final':
+                        content = event.get('content')
+                        if c['question'] is not None or not isinstance(content, str) or not content.strip() or len(content) > 100000:
+                            raise ValueError('Invalid final response')
+                        # A final is provisional until EOF, clean exit and teardown.
+                        task.update(summary='Finishing Hermes worker')
+                    elif kind == 'error':
+                        raise RuntimeError('Hermes worker failed')
+                    else:
+                        raise ValueError('Unknown worker event')
+                    c['revision'] += 1
+                await p.wait()
+                if content is None or p.returncode != 0:
+                    raise RuntimeError('Worker ended without a successful response')
+                outcome = {'state':'completed', 'summary':'Response received'}
         except asyncio.CancelledError:
-            task.update(state='cancelled', summary='Stopped by you', ended_at=time.time())
+            outcome = {'state':'cancelled', 'summary':'Stopped by you'}
             raise
         except TimeoutError:
-            task.update(state='failed', summary='Turn exceeded the 240-second limit. No response was fabricated.', ended_at=time.time())
+            outcome = {'state':'failed', 'summary':'Turn exceeded the 240-second limit. No response was fabricated.'}
         except Exception:
             # Never return arbitrary SDK exception bodies, paths or credentials to a browser/log.
-            task.update(state='failed', summary='Hermes did not complete this turn. Check native provider sign-in and compatibility; no response was fabricated.', ended_at=time.time())
+            outcome.update(state='failed')
         finally:
-            c['question'] = None
-            c['revision'] += 1
+            # Keep the turn busy and its slot owned through process-group teardown.
             if p is not None:
                 if p.returncode is None:
                     try:
@@ -135,11 +143,35 @@ class ChatManager:
                         await asyncio.wait_for(p.wait(), 3)
                     except (ProcessLookupError, TimeoutError):
                         if p.returncode is None:
-                            os.killpg(p.pid, signal.SIGKILL)
+                            try:
+                                os.killpg(p.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
                             await p.wait()
                 if p.stdin:
                     p.stdin.close()
-            self.processes.pop(c['id'], None)
+            if self.processes.get(c['id']) is p:
+                self.processes.pop(c['id'], None)
+            if self.work.get(c['id']) is asyncio.current_task():
+                self.work.pop(c['id'], None)
+            if diagnostics is not None:
+                diagnostics.cleanup()
+            if acquired:
+                self.slots.release()
+            # No awaits between ownership check, transcript commit and releasing busy state.
+            if self.chats.get(c['id']) is c and c['task'] is task:
+                c['question'] = None
+                if outcome['state'] == 'completed':
+                    msg = {'id':uuid.uuid4().hex, 'role':'assistant', 'content':content, 'at':time.time()}
+                    c['messages'].append(msg)
+                    context = message
+                    if c['pending_clarifications']:
+                        context += '\n\nClarifications supplied during this turn:\n' + '\n'.join(c['pending_clarifications'])
+                    c['history'].extend([{'role':'user','content':context}, {'role':'assistant','content':content}])
+                    outcome['result_message_id'] = msg['id']
+                c['pending_clarifications'] = []
+                task.update(**outcome, ended_at=time.time())
+                c['revision'] += 1
 
     async def answer(self, chat_id, question_id, answers):
         c = self._find(chat_id)
@@ -167,15 +199,18 @@ class ChatManager:
 
     async def stop(self, chat_id):
         c = self._find(chat_id)
+        turn = c['task']
         task = self.work.get(chat_id)
         if task and not task.done():
-            task.cancel()
+            if not task.cancelling():
+                task.cancel()
             try:
-                await task
+                await asyncio.shield(task)
             except asyncio.CancelledError:
-                pass
-        if c['task'] and c['task']['state'] in BUSY:
-            c['task'].update(state='cancelled', summary='Stopped by you', ended_at=time.time())
+                if not task.done():
+                    raise
+        if c['task'] is turn and turn and turn['state'] in BUSY:
+            turn.update(state='cancelled', summary='Stopped by you', ended_at=time.time())
             c['question'] = None
             c['revision'] += 1
 

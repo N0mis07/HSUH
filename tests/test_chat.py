@@ -8,7 +8,7 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         from hsuh.chat import ChatManager
         m = ChatManager()
         a, b = m.create(), m.create()
-        async def bounded_wait(chat, message):
+        async def bounded_wait(chat, message, task):
             await asyncio.sleep(10)
         with patch.object(m, '_run', bounded_wait):
             m.submit(a['id'], 'Explain event loops')

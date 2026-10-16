@@ -20,8 +20,12 @@ Workers communicate by bounded NDJSON over private stdin/stdout pipes:
 
 - `ready`: non-secret model/provider/reasoning identity.
 - `question`: actual normalized native `clarify` callback fields; parent assigns a one-use question UUID and marks pending input. Answers flow back through stdin. No credential request type is accepted.
-- `final`: only final response text after Hermes reports `completed` and no failed/interrupted/partial status.
+- `final`: provisional final text after Hermes reports `completed` and no failed/interrupted/partial status. The parent requires exactly one final, no following events, EOF and exit code zero before committing assistant text/history. A failed protocol/exit commits neither.
 - `error`: generic failure; arbitrary provider exceptions and stdout/stderr are not browser/log content.
+
+A turn's immutable task identity is captured at submission. A chat and worker slot remain busy until process teardown and diagnostic disposal complete, even after final/error/cancel. Process/work removals compare their exact owner; terminal state, question cleanup and successful transcript commit occur together without an await. Stop captures its original turn and cannot cancel a newer turn after a late await. One 240-second deadline starts after slot acquisition and encloses startup, initial write/drain, all response/input waits and process exit; termination has a separate 3-second grace before SIGKILL.
+
+Native Hermes currently writes provider-error request dumps through `agent.logs_dir` regardless of `save_trajectories`. HSUH assigns this source-verified attribute to a fresh parent-owned private temporary directory before `run_conversation`, preserves the native secret redactor and removes the directory after process teardown. It does not change `HERMES_HOME` or profile settings for diagnostics. Ordinary conversation text can temporarily remain in these dumps, and abrupt parent/VPS death can leave temporary files: see SECURITY.md. There is no verified native no-content-retention switch in this integration.
 
 HSUH retains only user/final text for the next turn, combining clarified input into the originating user turn to preserve role alternation. It drops model reasoning and tool traces. This reduced transcript is appropriate only for this limited toolset; a future full-agent API adapter should preserve native server-side session/tool history instead.
 

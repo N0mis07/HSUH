@@ -78,7 +78,27 @@ async function updateChat() {
     shownRevision=c.revision;
   } else {document.querySelectorAll('.task-card .task-time').forEach((n,i)=>{const t=[...c.tasks].reverse()[i];if(t)n.textContent=`Started ${time(t.started_at)} · ${elapsed(t)} elapsed`;});}
 }
-$('#composer').onsubmit=async e=>{e.preventDefault();const text=$('#message').value.trim();if(!text)return;$('#send').disabled=true;try{if(!current)await newChat();await api('chats/'+current+'/messages','POST',{message:text});$('#message').value='';drafts.delete(current);await updateChat();}catch(e){notice(e.message);$('#send').disabled=false;}};
+const draftVersions = new Map();
+$('#message').oninput=()=>{if(current){drafts.set(current,$('#message').value);draftVersions.set(current,(draftVersions.get(current)||0)+1);}};
+$('#composer').onsubmit=async e=>{
+  e.preventDefault();
+  const raw=$('#message').value, text=raw.trim();
+  if(!text)return;
+  $('#send').disabled=true;
+  let submitted=current;
+  try{
+    if(!submitted){await newChat();submitted=current;}
+    const version=draftVersions.get(submitted)||0;
+    drafts.set(submitted,raw);
+    await api('chats/'+submitted+'/messages','POST',{message:text});
+    // A late response owns only the unchanged draft it actually submitted.
+    if((draftVersions.get(submitted)||0)===version && drafts.get(submitted)===raw){
+      drafts.delete(submitted);
+      if(current===submitted && $('#message').value===raw)$('#message').value='';
+    }
+    await updateChat();
+  }catch(e){notice(e.message);if(current===submitted)$('#send').disabled=false;}
+};
 $('#message').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!$('#send').disabled)$('#composer').requestSubmit();}};
 $('#stop').onclick=async()=>{try{await api('chats/'+current+'/stop','POST',{});await updateChat();}catch(e){notice(e.message);}};
 const gib=n=>(n/1024**3).toFixed(2)+' GiB';

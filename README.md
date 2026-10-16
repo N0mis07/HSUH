@@ -20,7 +20,7 @@ Website credential inputs are visibly disabled. `/api/credentials` fails closed 
 
 Responses appear when a turn finishes; token streaming and raw reasoning are not exposed. Task summaries are deterministic public execution state, **not private chain-of-thought**. Text/fenced-code rendering deliberately does not execute model HTML.
 
-All HSUH chat/task state is in **VPS process memory**: survives switching and browser refresh, not a server restart. It is not imported into existing Hermes sessions. Each conversation is capped at 30 turns, with up to 40 conversations; each turn has a 240-second wall-clock limit, including human-input waits. No automatic weaker-model fallback. Provider failure becomes a failed task, never a fabricated answer.
+All HSUH chat/task state is in **VPS process memory**: survives switching and browser refresh, not a server restart. It is not imported into existing Hermes sessions. Each conversation is capped at 30 turns, with up to 40 conversations; each turn has a 240-second execution deadline after acquiring a worker slot, including subprocess startup, stdin backpressure, human-input waits and exit. Queue waiting is excluded; failed/cancelled workers retain their slot and chat ownership through bounded teardown (up to 3 seconds before forced termination). No automatic weaker-model fallback. Provider failure becomes a failed task, never a fabricated answer.
 
 ## Run on the VPS
 
@@ -65,6 +65,8 @@ python -m unittest discover -s tests -v
 python -m compileall -q hsuh tests
 node --check hsuh/static/app.js
 node --check hsuh/static/sw.js
+node tests/frontend_races.cjs
+python scripts/audit.py
 ```
 
 No frontend bundler is required; static assets are served directly. Tests use generated fictional identities/signing keys and no live provider calls. Optional real integration check: `python scripts/live_smoke.py` (uses your configured provider/subscription for a few bounded turns). Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

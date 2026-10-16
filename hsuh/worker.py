@@ -59,6 +59,13 @@ def main():
                     'Never ask for passwords, tokens, payment data or login codes in chat or clarify. A native vault bridge is not connected. '
                     'Give concise activity explanations, not private chain-of-thought. Be explicit about limitations.'),
             )
+            # Native provider-error dumps use logs_dir even when trajectories are disabled.
+            # Source-verified compatibility seam: isolate before any conversation/API call.
+            # Keep native secret redaction; ordinary conversation text is not a secret pattern.
+            diagnostics = Path(os.environ['HSUH_DIAGNOSTICS_DIR'])
+            if not diagnostics.is_dir() or not isinstance(getattr(agent, 'logs_dir', None), Path):
+                raise RuntimeError('Native diagnostic isolation is unavailable')
+            agent.logs_dir = diagnostics
             actual = {t.get('function',{}).get('name') for t in (agent.tools or [])}
             if actual != {'clarify'}:
                 raise RuntimeError('Tool allowlist invariant failed')
