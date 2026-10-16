@@ -2,7 +2,7 @@
 
 ## Native Hermes control, 2026-10-16
 
-- **46 Linux Python tests pass**, including nine native adapter regressions for
+- **48 Linux Python tests pass**, including eleven native adapter regressions for
   restart recovery, lost-admission idempotency, exact-run stop ownership, pending
   approval IDs, private event projection and owner/origin/body guards. Three
   production-controller scenarios cover deferred drafts, pending conversation

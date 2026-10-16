@@ -35,7 +35,7 @@ class Gateway:
         if path == '/v1/runs':
             run = self.runs.setdefault(key, {'run_id': 'run_'+key, 'status': 'running', 'session_id': body['session_id']})
             if self.fail_accept:
-                self.fail_accept = False
+                self.fail_accept -= 1
                 raise HTTPException(503, 'Gateway unavailable')
             return run
         if path.startswith('/v1/runs/'):
@@ -69,14 +69,16 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lost_admission_replays_same_key_after_restart(self):
         chat = await self.manager.create()
-        self.gateway.fail_accept = True
-        await self.manager.submit(chat['id'], 'Read a test file', 'request-1')
+        self.gateway.fail_accept = 2
+        uncertain = await self.manager.submit(chat['id'], 'Read a test file', 'request-1')
+        self.assertEqual(uncertain['task']['state'],'reconnecting')
         await self.manager.shutdown()
         self.manager = NativeManager(self.gateway, self.path, watch=False)
         chat = await self.manager.get(chat['id'])
         admissions = [c for c in self.gateway.calls if c[1] == '/v1/runs']
         self.assertEqual(len(self.gateway.runs), 1)
-        self.assertEqual(admissions[0][3], admissions[1][3])
+        self.assertEqual(len(admissions),3)
+        self.assertEqual(admissions[0][3], admissions[2][3])
         self.assertEqual(chat['task']['state'], 'running')
         self.assertNotIn('private reasoning', str(chat))
 
@@ -184,3 +186,32 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         c = await self.manager.get(c['id'])
         self.assertTrue(c['task']['undelivered_guidance'])
         self.assertIn('not delivered',c['task']['summary'])
+
+    async def test_reloaded_task_card_and_current_task_share_native_settlement_and_events(self):
+        c = await self.manager.create()
+        c = await self.manager.submit(c['id'],'Fixture work','request-1')
+        await self.manager.shutdown()
+        self.manager = NativeManager(self.gateway,self.path,watch=False)
+        self.manager.record_event(c['task']['id'],{'seq':1,'event':'tool.started','tool':'terminal'})
+        native = next(iter(self.gateway.runs.values()))
+        native['status']='completed'
+        c = await self.manager.get(c['id'])
+        self.assertEqual(c['tasks'][-1]['state'],'completed')
+        self.assertEqual(c['task']['events'][0]['tool'],'terminal')
+
+    async def test_older_busy_receipts_are_reconciled_without_restarting_work(self):
+        c=await self.manager.create()
+        await self.manager.submit(c['id'],'First work','request-1')
+        next(iter(self.gateway.runs.values()))['status']='completed'
+        await self.manager.get(c['id'])
+        await self.manager.submit(c['id'],'Second work','request-2')
+        for run in self.gateway.runs.values():
+            run['status']='completed'
+        await self.manager.get(c['id'])
+        # A receipt saved by the earlier adapter can retain an old busy state.
+        self.manager.chats[c['id']]['tasks'][0]['state']='running'
+        await self.manager.list()
+        c=await self.manager.get(c['id'])
+        self.assertTrue(all(t['state']=='completed' for t in c['tasks']))
+        self.assertEqual(self.manager.active_count,0)
+        self.assertEqual(len(self.gateway.runs),2)

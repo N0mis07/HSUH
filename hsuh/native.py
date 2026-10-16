@@ -116,7 +116,22 @@ class NativeManager:
         self.db.execute('PRAGMA journal_mode=DELETE')
         self.db.execute('CREATE TABLE IF NOT EXISTS workspace (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
         self.chats = {row[0]: json.loads(row[1]) for row in self.db.execute('SELECT id,data FROM workspace')}
+        # JSON duplicates the current receipt embedded in the history. Restore one
+        # canonical object so status, events and control ownership settle together.
+        for c in self.chats.values():
+            current = c.get('task')
+            if current:
+                for index, saved in enumerate(c['tasks']):
+                    if saved['id'] == current['id']:
+                        merged = {**saved, **current}
+                        if 'outbox' not in current:
+                            merged.pop('outbox', None)
+                        if (saved.get('last_seq', -1), len(saved.get('events', []))) > (current.get('last_seq', -1), len(current.get('events', []))):
+                            merged.update(events=saved.get('events', []), last_seq=saved.get('last_seq', -1))
+                        c['task'] = c['tasks'][index] = merged
+                        break
         self.locks = {}
+        self.refresh_slots = asyncio.Semaphore(6)
         self.observers = {}
         self.watch = watch
         self.processes = {}  # Execution belongs to Hermes, never a web worker process.
@@ -161,7 +176,12 @@ class NativeManager:
 
     async def list(self):
         # Status polling is independent of the selected conversation, including after restart.
-        await asyncio.gather(*(self._refresh(c) for c in list(self.chats.values()) if c.get('task') and c['task']['state'] in BUSY))
+        pending = [(c, c['task']) for c in self.chats.values() if c.get('task') and c['task']['state'] in BUSY]
+        pending += [(c, t) for c in self.chats.values() for t in reversed(c['tasks']) if t is not c.get('task') and t['state'] in BUSY]
+        async def refresh(c, task):
+            async with self.refresh_slots:
+                await self._refresh(c, task)
+        await asyncio.gather(*(refresh(c, task) for c, task in pending[:200]))
         return [{**copy.deepcopy({k:c[k] for k in ('id','title','revision','source')}),
                  'task':{k:v for k,v in self._public_task(c['task']).items() if k != 'events'} if c['task'] else None}
                 for c in reversed(list(self.chats.values())) if not c.get('removed')]
@@ -266,15 +286,20 @@ class NativeManager:
         self._save(c)
         self._observe(task)
 
-    async def _refresh(self, c):
-        task = c.get('task')
+    async def _refresh(self, c, task=None):
+        task = task or c.get('task')
         if not task or task['state'] not in BUSY:
             return
         async with self._lock(c['id']):
-            if task is not c.get('task'):
+            if not any(t is task for t in c['tasks']):
                 return
             if not task.get('run_id'):
-                await self._admit(c, task)
+                if task is c.get('task'):
+                    await self._admit(c, task)
+                else:
+                    task.update(state='interrupted', ended_at=time.time(), summary='Older admission has no native receipt. Check the transcript before retrying.')
+                    task.pop('outbox', None)
+                    self._save(c)
             if task.get('run_id'):
                 try:
                     status = await self.gateway.request('GET', '/v1/runs/'+task['run_id'])
