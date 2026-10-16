@@ -1501,7 +1501,7 @@ progress::-moz-progress-bar {
     display: block;
   }
   .mobile-nav {
-    height: 49px;
+    height: 53px;
     display: flex;
     gap: 5px;
     padding: 4px 10px;
@@ -1509,7 +1509,7 @@ progress::-moz-progress-bar {
   }
   .mobile-nav button {
     flex: 1;
-    min-height: 40px;
+    min-height: 44px;
     background: transparent;
     border-color: transparent;
     font-size: 10px;
@@ -1521,7 +1521,7 @@ progress::-moz-progress-bar {
   }
   .workspace,
   .workspace[data-view="chat"] {
-    height: calc(100dvh - 137px);
+    height: calc(100dvh - 141px);
     display: block;
   }
   .workspace > .sidebar,
@@ -1627,7 +1627,7 @@ progress::-moz-progress-bar {
   }
   .table-tools input,
   .table-tools select {
-    height: 42px;
+    height: 44px;
   }
   .table-tools select {
     max-width: 110px;
