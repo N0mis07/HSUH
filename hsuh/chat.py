@@ -135,21 +135,34 @@ class ChatManager:
             # Never return arbitrary SDK exception bodies, paths or credentials to a browser/log.
             outcome.update(state='failed')
         finally:
-            # Keep the turn busy and its slot owned through process-group teardown.
-            if p is not None:
-                if p.returncode is None:
-                    try:
-                        os.killpg(p.pid, signal.SIGTERM)
-                        await asyncio.wait_for(p.wait(), 3)
-                    except (ProcessLookupError, TimeoutError):
-                        if p.returncode is None:
-                            try:
-                                os.killpg(p.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                            await p.wait()
-                if p.stdin:
-                    p.stdin.close()
+            # Reaping has its own task: Stop may arrive after an error/timeout has
+            # already entered finally. Repeated cancellation must not abandon it.
+            async def reap():
+                if p is not None:
+                    if p.returncode is None:
+                        try:
+                            os.killpg(p.pid, signal.SIGTERM)
+                            await asyncio.wait_for(p.wait(), 3)
+                        except (ProcessLookupError, TimeoutError):
+                            if p.returncode is None:
+                                try:
+                                    os.killpg(p.pid, signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+                                await p.wait()
+                    if p.stdin:
+                        p.stdin.close()
+
+            cleanup = asyncio.create_task(reap())
+            cleanup_cancelled = False
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    cleanup_cancelled = True
+                    outcome = {'state':'cancelled', 'summary':'Stopped by you'}
+            cleanup.result()
+            # Keep the turn busy and its slot owned until reaping actually ends.
             if self.processes.get(c['id']) is p:
                 self.processes.pop(c['id'], None)
             if self.work.get(c['id']) is asyncio.current_task():
@@ -172,6 +185,8 @@ class ChatManager:
                 c['pending_clarifications'] = []
                 task.update(**outcome, ended_at=time.time())
                 c['revision'] += 1
+            if cleanup_cancelled:
+                raise asyncio.CancelledError
 
     async def answer(self, chat_id, question_id, answers):
         c = self._find(chat_id)

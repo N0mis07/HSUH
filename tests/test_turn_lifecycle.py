@@ -178,6 +178,58 @@ class TurnLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(state['task']['result_message_id'])
                 self.assertNotIn(cid, self.manager.processes)
 
+    async def test_stop_during_error_or_timeout_teardown_finishes_cleanup(self):
+        import os
+        import shutil
+        import signal
+        original_timeout = asyncio.timeout
+        for mode in ('error', 'timeout'):
+            with self.subTest(mode=mode):
+                self.manager = ChatManager()
+                self.cid = self.manager.create()['id']
+                marker = self.root / (mode + '-terminating')
+                diagnostic_marker = self.root / (mode + '-diagnostic')
+                source = (
+                    'import os,signal,time\nfrom pathlib import Path\n'
+                    f'def stop(*args): Path({str(marker)!r}).touch()\n'
+                    'signal.signal(signal.SIGTERM,stop)\n'
+                    'd=Path(os.environ["HSUH_DIAGNOSTICS_DIR"])\n'
+                    '(d/"canary").write_text("Fictional diagnostic")\n'
+                    f'Path({str(diagnostic_marker)!r}).write_text(str(d))\n'
+                    + (self.emit({'type':'error'}) + '\n' if mode == 'error' else '')
+                    + 'while True: time.sleep(.01)\n'
+                )
+                diagnostic = None
+                p = None
+                with patch('hsuh.chat.asyncio.timeout', lambda seconds: original_timeout(.4 if seconds == 240 else seconds)):
+                    async with self.workers(source):
+                        self.manager.submit(self.cid, mode)
+                        work = self.manager.work[self.cid]
+                        try:
+                            await until(marker.exists)
+                            p = self.spawned[-1]
+                            diagnostic = Path(diagnostic_marker.read_text())
+                            self.assertTrue((diagnostic/'canary').exists())
+                            # Both requests arrive while failed/timeout teardown is already awaiting exit.
+                            await asyncio.wait_for(asyncio.gather(
+                                self.manager.stop(self.cid), self.manager.stop(self.cid)), 5)
+                            self.assertTrue(work.done())
+                            self.assertIsNotNone(p.returncode, 'Stop must reap a SIGTERM-ignoring worker')
+                            self.assertFalse(diagnostic.exists(), 'Stop must dispose native diagnostics')
+                            self.assertNotIn(self.cid, self.manager.processes)
+                            self.assertNotIn(self.cid, self.manager.work)
+                            self.assertEqual(self.manager.slots._value, 2)
+                        finally:
+                            if p is not None and p.returncode is None:
+                                os.killpg(p.pid, signal.SIGKILL)
+                                await p.wait()
+                            if diagnostic is not None and diagnostic.exists():
+                                shutil.rmtree(diagnostic)
+                async with self.workers(self.emit({'type':'final','content':'Following turn'})):
+                    self.manager.submit(self.cid, 'Following turn')
+                    await asyncio.wait_for(self.manager.work[self.cid], 3)
+                    self.assertEqual(self.manager.get(self.cid)['task']['state'], 'completed')
+
     async def test_cancellation_does_not_release_chat_during_slow_teardown(self):
         marker, release, ready = self.root/'terminating', self.root/'exit', self.root/'ready'
         first = ("import signal,time\nfrom pathlib import Path\n"
