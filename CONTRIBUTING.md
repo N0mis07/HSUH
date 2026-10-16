@@ -1,8 +1,8 @@
 # Contributing to HSUH
 
-Community issues and pull requests are welcome. Keep HSUH an information-dense, honest Hermes client rather than a collection of simulated dashboards.
+Community issues and pull requests are welcome. Keep HSUH a clear, chat-first Hermes client with honest measured stats and native task controls.
 
-1. Fork, branch, and make one focused change. Keep Python and browser assets dependency-light; no build system is needed for the current client.
+1. Fork, branch, and make one focused change. Keep Python and browser assets dependency-light; rebuild the locally bundled OpenUI assets when changing their source.
 2. Add a failing behavior/regression test first, implement the fix, and run the checks in the README. Live-provider tests must be opt-in and bounded; never spend another user's quota during ordinary CI.
 3. Keep model text untrusted. Use text nodes, not `innerHTML`; never render arbitrary tool/provider exception bodies. Do not expose private reasoning.
 4. Preserve conversation/job ownership, stop semantics, limits, and error states. A successful network request is not proof of completed agent work.

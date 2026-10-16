@@ -2,9 +2,17 @@
 
 An original, compact browser workspace for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Execution and conversation state live on a Linux VPS; computer and phone clients need only a browser. HSUH is an independent project, not an official Nous Research client.
 
-## Control centre and OpenUI
+## Chat, a buddy and the essentials
 
-The default view is a dense operations dashboard: measured CPU/RAM history,
+Chat opens first, with rounded conversation bubbles and Mote, the original HSUH
+buddy. Mote's status follows the selected task: ready, working, waiting for your
+input or permission, or interrupted/failed. Suggested messages fill the composer
+without sending. The quiet summary shows only RAM, the first Codex quota window
+and the active Hermes agent count. Tool logs sit in an expandable activity section;
+approval requests and question cards stay directly visible in the conversation.
+
+Work & tools retains the native controls. Stats opens the detailed readings:
+measured CPU/RAM history,
 swap, disk space, network/disk rates, Linux resource pressure, searchable process
 RSS/CPU/thread counts, native gateway state, open Hermes sessions, turn leases,
 delegation state counts, recorded API/tool/token totals, and native Codex/provider

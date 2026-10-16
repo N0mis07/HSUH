@@ -77,7 +77,7 @@ class SSOTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_anonymous_assets_and_apis_and_forged_access_headers_are_denied(self):
         for path in ['/api/status', '/api/chats', '/api/telemetry', '/api/quota', '/api/activity',
-                     '/assets/app.js', '/assets/openui.js', '/manifest.webmanifest', '/sw.js']:
+                     '/assets/app.js', '/assets/openui.js', '/assets/stats.css', '/manifest.webmanifest', '/sw.js']:
             response = await self.client.get(path, headers={'Cf-Access-Jwt-Assertion': 'forged'})
             self.assertEqual(response.status_code, 401, path)
         self.assertEqual((await self.client.get('/', headers={'Host': '127.0.0.1:8110'})).status_code, 400)
