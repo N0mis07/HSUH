@@ -26,7 +26,11 @@ window.addEventListener('hsuh:ui-ready',()=>{for(const [name,data] of statsCache
 function time(ts) { return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Not started'; }
 function elapsed(t) { const s=t.elapsed_seconds??Math.max(0,Math.floor(((t.ended_at || Date.now()/1000)-(t.started_at || t.created_at)))); return s<60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`; }
 function stateLabel(state) {return ({pending_input:'Needs your answer', waiting_for_approval:'Approval needed', stopping:'Stopping',reconnecting:'Reconnecting', interrupted:'Interrupted',queued:'Queued', running:'Running', completed:'Completed', failed:'Failed', cancelled:'Stopped'})[state] || state;}
+let shownList=null;
 function renderList() {
+  const revision=JSON.stringify([current,chats.map(c=>[c.id,c.title,c.task?.state])]);
+  if(shownList===revision)return;
+  shownList=revision;
   $('#chat-count').textContent=chats.length;
   $('#chat-list').replaceChildren(...chats.map(c=>{
     const b=el('button',undefined,'chat-item'+(c.id===current?' selected':'')); b.dataset.chatId=c.id; b.setAttribute('aria-current',String(c.id===current));
