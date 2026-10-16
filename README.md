@@ -11,6 +11,8 @@ without sending. The quiet summary shows only RAM, the first Codex quota window
 and the active Hermes agent count. Tool logs sit in an expandable activity section;
 approval requests and question cards stay directly visible in the conversation.
 
+The visual conventions are recorded in [the interface guide](.interface-design/system.md).
+
 Work & tools retains the native controls. Stats opens the detailed readings:
 measured CPU/RAM history,
 swap, disk space, network/disk rates, Linux resource pressure, searchable process
