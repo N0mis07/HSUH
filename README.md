@@ -2,6 +2,40 @@
 
 An original, compact browser workspace for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Execution and conversation state live on a Linux VPS; computer and phone clients need only a browser. HSUH is an independent project, not an official Nous Research client.
 
+## Control centre and OpenUI
+
+The default view is a dense operations dashboard: measured CPU/RAM history,
+swap, disk space, network/disk rates, Linux resource pressure, searchable process
+RSS/CPU/thread counts, native gateway state, open Hermes sessions, turn leases,
+delegation state counts, recorded API/tool/token totals, and native Codex/provider
+quota windows with reset times. Open sessions include idle conversations; they
+are not a running-agent count. Session metadata is read through SQLite read-only
+connections; prompts, message bodies, process arguments and environments are not
+part of these statistics. Missing/incompatible sources show unavailable states.
+
+Conversations use the real [OpenUI](https://www.openui.com/docs) Lang React
+renderer (`@openuidev/react-lang` 1.0.1). Hermes can emit a fenced `openui` program
+using six permitted components: Stack, Heading, Paragraph, Metric, DataTable and
+Checklist. Checklists are interactive in the current view. Unknown, malformed,
+oversized or tool-bearing programs fall back to text. No raw HTML, arbitrary
+JavaScript, remote URLs, Query/Mutation handlers or model-driven API actions are
+registered. Generated measurements are model content, separate from the measured
+dashboard. Existing provider/model settings are preserved; no OpenUI Gateway key
+or hosted observability service is needed.
+
+Browser assets are bundled locally with exact dependency versions and a lockfile:
+
+```sh
+npm ci
+npm run build:ui
+node tests/openui.mjs
+```
+
+The committed bundle lets the VPS run without a frontend build service. Rebuild
+after editing `frontend/openui.tsx`; CI checks the source too. Dependency licenses
+are retained in `hsuh/static/licenses.txt` and legal bundle comments. OpenUI is
+MIT-licensed software from Thesys, not OpenAI's private application source.
+
 ## Initial working scope
 
 - Independent multi-turn conversations, with two concurrent Hermes workers and a bounded queue.
@@ -15,7 +49,7 @@ An original, compact browser workspace for [Hermes Agent](https://github.com/Nou
 
 ## Deliberate limitations
 
-This release is **conversation + clarify only**, not a remote terminal. Native terminal, browser, file, delegation and existing gateway/background-job integrations are not connected. HSUH does not pretend to track jobs started elsewhere. Full agent tools remain disabled until their approvals and authorization can be safely bridged.
+Agent execution in this release is **conversation + clarify only**, not a remote terminal. Native terminal, browser, file and delegation controls are not connected. The control centre observes existing native work through read-only gateway/session metadata, without controlling it. Full agent tools remain disabled until their approvals and authorization can be safely bridged.
 
 Website credential inputs are visibly disabled. `/api/credentials` fails closed with 501 and does not parse or forward the payload. No native vault bridge is wired; never enter a password, token, payment detail or login code in chat/question cards. There are no working website-login forms yet.
 
@@ -102,6 +136,7 @@ python -m compileall -q hsuh tests
 node --check hsuh/static/app.js
 node --check hsuh/static/sw.js
 node tests/frontend_races.cjs
+node tests/openui.mjs
 python scripts/audit.py
 ```
 

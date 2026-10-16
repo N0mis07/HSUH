@@ -12,7 +12,12 @@ async function api(path, method='GET', body) {
   return r.json();
 }
 function panel(name) { $('.workspace').dataset.panel=name; document.querySelectorAll('[data-panel].mobile-nav button, .mobile-nav button').forEach(n => n.setAttribute('aria-pressed',String(n.dataset.panel===name))); }
-document.querySelectorAll('.mobile-nav button').forEach(n=>n.onclick=()=>{const next=n.dataset.panel==='inspector' && $('.workspace').dataset.panel==='inspector' ? 'chat' : n.dataset.panel; panel(next);});
+function view(name) { $('.workspace').dataset.view=name; if(name==='chat')panel('chat'); document.querySelectorAll('[data-view]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.view===name))); }
+document.querySelectorAll('[data-view]').forEach(n=>n.onclick=()=>view(n.dataset.view));
+document.querySelectorAll('.mobile-nav button[data-panel]').forEach(n=>n.onclick=()=>{view('chat');panel(n.dataset.panel);});
+const statsCache=new Map();
+const statsEvent=(name,data)=>{statsCache.set(name,data);if(typeof CustomEvent==='function')window.dispatchEvent(new CustomEvent('hsuh:'+name,{detail:data}));};
+window.addEventListener('hsuh:ui-ready',()=>{for(const [name,data] of statsCache)statsEvent(name,data);});
 function time(ts) { return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Not started'; }
 function elapsed(t) { const s=Math.max(0,Math.floor(((t.ended_at || Date.now()/1000)-(t.started_at || t.created_at)))); return s<60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`; }
 function stateLabel(state) {return ({pending_input:'Needs your answer', queued:'Queued', running:'Running', completed:'Completed', failed:'Failed', cancelled:'Stopped'})[state] || state;}
@@ -27,7 +32,7 @@ function renderList() {
 }
 async function selectChat(id) {
   if(current) drafts.set(current,$('#message').value);
-  current=id; shownRevision=null; shownQuestion=null; $('#message').value=drafts.get(id)||''; renderList(); panel('chat');
+  current=id; shownRevision=null; shownQuestion=null; $('#message').value=drafts.get(id)||''; renderList(); view('chat');
   await updateChat();
 }
 async function newChat() {const c=await api('chats','POST',{}); chats=await api('chats'); await selectChat(c.id); $('#message').focus();}
@@ -37,8 +42,16 @@ function messageNode(m) {
   const a=el('article',undefined,'message '+m.role); a.id='message-'+m.id;
   const meta=el('div',undefined,'message-meta'); meta.append(el('strong',m.role==='assistant'?'Hermes':'You'),el('span',time(m.at)));
   const content=el('div',undefined,'message-body');
-  // Plain text and fenced code only; untrusted model HTML is never interpreted.
-  m.content.split(/```[^\n]*\n([\s\S]*?)```/g).forEach((text,index)=>content.append(el(index%2?'pre':'span',text)));
+  // Model text never becomes HTML. OpenUI uses a fixed, locally bundled component library.
+  const pattern=/```([^\n]*)\n([\s\S]*?)```/g;let cursor=0;
+  for(const match of m.content.matchAll(pattern)){
+    content.append(el('span',m.content.slice(cursor,match.index)));
+    if(m.role==='assistant' && match[1].trim().toLowerCase()==='openui' && window.HSUHOpenUI){
+      const target=el('div');content.append(target);window.HSUHOpenUI.render(target,match[2]);
+    }else content.append(el('pre',match[2]));
+    cursor=match.index+match[0].length;
+  }
+  content.append(el('span',m.content.slice(cursor)));
   a.append(meta,content); return a;
 }
 function taskNode(t) {
@@ -71,6 +84,7 @@ async function updateChat() {
   $('#welcome').hidden=c.messages.length>0;
   if(shownRevision!==c.revision){
     const scroller=$('#chat-scroll');const nearEnd=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<130;
+    window.HSUHOpenUI?.dispose();
     $('#messages').replaceChildren(...c.messages.map(messageNode));
     $('#task-feed').replaceChildren(...[...c.tasks].reverse().map(taskNode));
     if(c.question?.id!==shownQuestion){$('#questions').replaceChildren(...(c.question?[questionNode(c.question)]:[]));shownQuestion=c.question?.id;}
@@ -102,28 +116,33 @@ $('#composer').onsubmit=async e=>{
 $('#message').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!$('#send').disabled)$('#composer').requestSubmit();}};
 $('#stop').onclick=async()=>{try{await api('chats/'+current+'/stop','POST',{});await updateChat();}catch(e){notice(e.message);}};
 const gib=n=>(n/1024**3).toFixed(2)+' GiB';
+let telemetryBusy=false,activityBusy=false;
 async function telemetry(){
+  if(telemetryBusy||document.hidden)return;telemetryBusy=true;
   try{const d=await api('telemetry'),m=d.memory,p=m.used/m.total*100;$('#ram-percent').textContent=p.toFixed(1)+'%';$('#ram-number').textContent=gib(m.used)+' / '+gib(m.total);$('#ram-meter').value=p;$('#ram-available').textContent=gib(m.available);$('#swap').textContent=gib(d.swap.used)+' / '+gib(d.swap.total);
-  $('#processes').replaceChildren(...d.processes.map(p=>{const row=el('div',undefined,'process-row');const name=el('span',p.name);name.append(el('small',String(p.pid)));row.append(name,el('span',(p.rss/1024**2).toFixed(0)+' MiB'));return row;}));$('#sample-time').textContent=`Sample ${time(d.sampled_at)} · ${d.scope}`;
-  }catch{ $('#sample-time').textContent='Live telemetry unavailable · values above may be stale'; }
+  $('#processes').replaceChildren(...d.processes.slice(0,8).map(p=>{const row=el('div',undefined,'process-row');const name=el('span',p.name);name.append(el('small',String(p.pid)));row.append(name,el('span',(p.rss/1024**2).toFixed(0)+' MiB'));return row;}));$('#sample-time').textContent=`Sample ${time(d.sampled_at)} · ${d.scope}`;
+  $('#ribbon-cpu').textContent=d.cpu?d.cpu.percent.toFixed(1)+'%':'—';$('#ribbon-ram').textContent=p.toFixed(1)+'%';$('#ribbon-processes').textContent=d.process_count??'—';$('#ribbon-time').textContent=time(d.sampled_at);
+  $('#inspector-cpu').textContent=d.cpu?d.cpu.percent.toFixed(1)+'%':'—';$('#inspector-processes').textContent=d.process_count??'—';statsEvent('telemetry',d);
+  }catch{ $('#sample-time').textContent='Live telemetry unavailable · values above may be stale';statsEvent('stats-error',{source:'host',message:'Live host telemetry is unavailable.'}); }finally{telemetryBusy=false;}
 }
+async function activity(){if(activityBusy||document.hidden)return;activityBusy=true;try{const d=await api('activity');$('#ribbon-agents').textContent=d.gateway?.stale?'—':d.gateway?.active_agents??'—';$('#ribbon-sessions').textContent=d.totals?.open??'—';statsEvent('activity',d);}catch{statsEvent('stats-error',{source:'activity',message:'Native activity metadata is unavailable.'});}finally{activityBusy=false;}}
 async function quota(){
   $('#refresh-quota').disabled=true;
-  try{const d=await api('quota'),n=d.native,box=$('#quota');box.replaceChildren(el('p',n.available?`${n.provider} · ${n.plan}`:'Provider quota unavailable','fine'));
+  try{const d=await api('quota'),n=d.native,box=$('#quota');statsEvent('quota',d);$('#ribbon-quota').textContent=n.windows?.length?`${n.windows[0].label} ${(100-n.windows[0].used_percent).toFixed(0)}% left`:'Unavailable';box.replaceChildren(el('p',n.available?`${n.provider} · ${n.plan}`:'Provider quota unavailable','fine'));
     for(const w of n.windows||[]){const row=el('div',undefined,'quota-window'),pair=el('div',undefined,'metric-pair');pair.append(el('span',w.label),el('strong',`${w.used_percent}% used`));const bar=el('progress');bar.max=100;bar.value=w.used_percent;bar.setAttribute('aria-label',w.label+' quota used');row.append(pair,bar);if(w.resets_at)row.append(el('p','Resets '+new Date(w.resets_at).toLocaleString(),'fine'));box.append(row);}
     if(n.note)box.append(el('p',n.note,'fine'));
     box.append(el('p',`Source: Hermes ${n.source}. Updated ${n.fetched_at?new Date(n.fetched_at).toLocaleString():'unavailable'}.`,'quota-caption'));
     box.append(el('h3','Aperture budgets'),el('p',d.aperture.note,'fine'));
     if(d.aperture.dashboard){const a=el('a','Open authoritative Aperture quotas ↗','quota-link');a.href=d.aperture.dashboard;a.target='_blank';a.rel='noopener noreferrer';box.append(a);}
     box.append(el('p',`${d.note} Checked ${new Date(d.checked_at).toLocaleString()}. Refreshes at most once a minute.`,'quota-caption'));
-  }catch{$('#quota').replaceChildren(el('p','Quota sources unavailable. No balance estimated.','fine'));}finally{$('#refresh-quota').disabled=false;}
+  }catch{statsEvent('quota',{native:{available:false,windows:[],note:'Quota source unavailable. No balance estimated.'},aperture:{note:'Unavailable.'}});$('#quota').replaceChildren(el('p','Quota sources unavailable. No balance estimated.','fine'));}finally{$('#refresh-quota').disabled=false;}
 }
 $('#refresh-quota').onclick=quota;
-async function tick(){if(pollBusy||document.hidden)return;pollBusy=true;try{chats=await api('chats');renderList();await updateChat();const s=await api('status');$('#connection').textContent=`Connected · ${s.active} active`;$('#runtime').textContent=s.model?`${s.model.model} · ${s.model.provider} · reasoning ${s.model.reasoning_effort}. ${s.access}.`: `Model from native configuration on first turn. ${s.access}.`;}catch(e){$('#connection').textContent='Disconnected · refresh to sign in';}finally{pollBusy=false;}}
+async function tick(){if(pollBusy||document.hidden)return;pollBusy=true;try{chats=await api('chats');renderList();await updateChat();const s=await api('status');$('#connection').textContent=`Connected · ${s.active} active`;$('#ribbon-chats').textContent=chats.length;$('#runtime').textContent=s.model?`${s.model.model} · ${s.model.provider} · reasoning ${s.model.reasoning_effort}. ${s.access}.`: `Model from native configuration on first turn. ${s.access}.`;}catch(e){$('#connection').textContent='Disconnected · refresh to sign in';}finally{pollBusy=false;}}
 let installPrompt;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('#install').hidden=false;});
 $('#install').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;$('#install').hidden=true;}};
 if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
-try{chats=await api('chats');if(chats.length)await selectChat(chats[0].id);else await newChat();await tick();telemetry();quota();}catch(e){notice(e.message);}
-setInterval(tick,1800);setInterval(telemetry,7000);setInterval(quota,65000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();telemetry();}});
+try{chats=await api('chats');if(chats.length)await selectChat(chats[0].id);else await newChat();view('overview');await tick();telemetry();activity();quota();}catch(e){notice(e.message);}
+setInterval(tick,2000);setInterval(telemetry,5000);setInterval(activity,12000);setInterval(()=>{if(!document.hidden)quota();},65000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();telemetry();activity();}});

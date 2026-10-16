@@ -32,6 +32,7 @@ async function fixture() {
       '/api/chats': [chat('a'),chat('b')],
       '/api/chats/a':chat('a'), '/api/chats/b':chat('b'),
       '/api/status':{active:0,access:'Fixture'},
+      '/api/activity':{available:false,gateway:{available:false},hsuh:{conversations:2,active_turns:0}},
       '/api/telemetry':{memory:{used:1,total:2,available:1},swap:{used:0,total:1},processes:[]},
       '/api/quota':{native:{available:false,windows:[]},aperture:{note:'Fixture'}}
     };

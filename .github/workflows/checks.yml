@@ -21,8 +21,11 @@ jobs:
         with:
           node-version: '22'
       - run: python -m pip install -r requirements.txt
+      - run: npm ci --no-fund
+      - run: npm run build:ui
       - run: python -m unittest discover -s tests -v
       - run: python -m compileall -q hsuh tests
       - run: node --check hsuh/static/app.js && node --check hsuh/static/sw.js
       - run: node tests/frontend_races.cjs
+      - run: node tests/openui.mjs
       - run: python scripts/audit.py
