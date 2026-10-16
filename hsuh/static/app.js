@@ -2,6 +2,7 @@ const $ = s => document.querySelector(s);
 const busyStates = new Set(['queued','running','pending_input','waiting_for_approval','stopping','reconnecting']);
 let current = null, chats = [], shownRevision = null, shownQuestion = null, pollBusy = false;
 let currentTask=null, currentNative=false, shownApproval=null, controlData=null, controlBusy=false, workTab='tasks';
+let creatingChat=false,currentReady=false;
 const submissions=new Map();
 const drafts = new Map(); // Memory only. Never localStorage, sessionStorage or IndexedDB.
 function el(tag, text, cls) { const n = document.createElement(tag); if(text !== undefined) n.textContent = text; if(cls) n.className = cls; return n; }
@@ -34,10 +35,11 @@ function renderList() {
 }
 async function selectChat(id) {
   if(current) drafts.set(current,$('#message').value);
-  current=id; shownRevision=null; shownQuestion=null; $('#message').value=drafts.get(id)||''; renderList(); view('chat');
+  current=id;currentTask=null;currentNative=false;currentReady=false;$('#send').disabled=true;$('#message').disabled=true;
+  shownRevision=null; shownQuestion=null; $('#message').value=drafts.get(id)||''; renderList(); view('chat');
   await updateChat();
 }
-async function newChat() {const c=await api('chats','POST',{}); chats=await api('chats'); await selectChat(c.id); $('#message').focus();}
+async function newChat() {if(creatingChat)return;creatingChat=true;$('#send').disabled=true;$('#message').disabled=true;try{const c=await api('chats','POST',{}); chats=await api('chats'); await selectChat(c.id);}finally{creatingChat=false;await updateChat();}$('#message').focus();}
 $('#new-chat').onclick=()=>newChat().catch(e=>notice(e.message));
 $('#delete-chat').onclick=async()=>{if(!current || !confirm(currentNative?'Remove this conversation from HSUH? Its native Hermes transcript is retained. Active tasks must be stopped first.':'Delete this HSUH conversation and stop its active turn?'))return; try {await api('chats/'+current,'DELETE'); drafts.delete(current); current=null; shownRevision=null; chats=await api('chats'); if(chats.length)await selectChat(chats[0].id); else await newChat();}catch(e){notice(e.message);}};
 function messageNode(m) {
@@ -88,13 +90,13 @@ async function updateChat() {
   if(!current)return;
   const selected=current;
   const c=await api('chats/'+selected);if(current!==selected)return;
-  currentTask=c.task;currentNative=!!c.native;
+  currentTask=c.task;currentNative=!!c.native;currentReady=true;
   $('#chat-title').textContent=c.title;
   const busy=c.task && busyStates.has(c.task.state);
   const steering=busy&&c.native&&c.task.state==='running';
-  $('#send').disabled=!!busy&&!steering; $('#stop').hidden=!busy;$('#stop').disabled=c.task?.state==='stopping'||!c.task?.run_id&&c.native;
+  $('#send').disabled=creatingChat||!!busy&&!steering; $('#stop').hidden=!busy;$('#stop').disabled=c.task?.state==='stopping'||!c.task?.run_id&&c.native;
   $('#send').textContent=steering?'Send guidance ↗':'Send ↗';
-  $('#message').disabled=!!busy&&!steering;
+  $('#message').disabled=creatingChat||!!busy&&!steering;
   $('#composer-hint').textContent=c.task?.state==='waiting_for_approval'?'Review the approval card above':c.task?.state==='pending_input'?'Answer the question card above':steering?'Send guidance to this running task · closing this site keeps it running':busy?'Waiting for Hermes · this task continues on the VPS':'Enter to send · Shift + Enter for a new line';
   $('#retention-note').textContent=c.native?'Native Hermes tools, memory and transcripts. Closing the website keeps tasks running. Keep secrets out of chat.':'Chats are kept in VPS memory until deletion or server restart. Keep secrets out of chat.';
   $('#delete-chat').textContent=c.native?'Remove':'Delete';
@@ -115,6 +117,7 @@ const draftVersions = new Map();
 $('#message').oninput=()=>{if(current){drafts.set(current,$('#message').value);draftVersions.set(current,(draftVersions.get(current)||0)+1);}};
 $('#composer').onsubmit=async e=>{
   e.preventDefault();
+  if(creatingChat||current&&!currentReady)return;
   const raw=$('#message').value, text=raw.trim();
   if(!text)return;
   $('#send').disabled=true;
