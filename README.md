@@ -36,7 +36,44 @@ after editing `frontend/openui.tsx`; CI checks the source too. Dependency licens
 are retained in `hsuh/static/licenses.txt` and legal bundle comments. OpenUI is
 MIT-licensed software from Thesys, not OpenAI's private application source.
 
-## Initial working scope
+## Native Hermes control
+
+With `HSUH_NATIVE_CONTROL=1`, HSUH connects to the existing authenticated,
+loopback Hermes API server. It uses `/v1/runs`, native persisted sessions and
+the native scheduler. Tools follow the **api_server** platform configuration;
+configure it to match Telegram for toolset parity. HSUH does not change native
+tool/approval settings automatically.
+
+- Start tasks in chat, watch tool/subagent activity, send guidance to a running
+  task and stop its exact run. Stopping stays pending until native settlement.
+  Closing the browser or restarting HSUH does not cancel native work.
+- Approve once, deny, or approve for the native session when offered. Every
+  decision includes the current run and exact approval request ID. Permanent
+  approvals and blanket approval responses are not exposed.
+- Work & tools shows tasks, tool availability, native/Telegram sessions and
+  schedules. Pause, resume or run existing schedules; ask Hermes in chat to create
+  or edit them. Pausing a schedule does not interrupt an execution already running.
+- Open existing transcripts and continue them. Controls target website-started
+  runs; turns already owned by Telegram remain under that transport's control.
+- Native transcripts persist in Hermes. A private SQLite ledger records workspace
+  membership, admission IDs and bounded receipts. Ambiguous admission retries reuse
+  the same native idempotency key, including after restart. Removing a workspace
+  chat retains the native transcript. The UI displays the latest 100 messages and
+  30 task cards, rather than an unlimited transcript export.
+
+Set `HSUH_GATEWAY_KEY` to the existing local service key through a private
+environment file, never a browser value or committed file. Only the backend uses
+it, at `127.0.0.1:8642`. `HSUH_GATEWAY_PORT` can change that local port;
+`HSUH_CONTROL_DB` optionally selects the ledger path (default
+`~/.local/state/hsuh/control.sqlite3`). No arbitrary upstream URL is accepted.
+Keep native interactive/smart approvals enabled. Hermes resolves its provider
+credentials and applies its own memory, context, retention and diagnostic policy.
+Website credential collection remains disabled. Clarifications use ordinary
+chat replies in native mode; the native API has no clarify-card callback.
+
+## Library-only working scope
+
+The sections below describe the limited fallback when native control is disabled.
 
 - Independent multi-turn conversations, with two concurrent Hermes workers and a bounded queue.
 - Conversation-owned task cards and list indicators: queued, running, needs input, completed, failed, stopped; real start/elapsed time and response anchors. Switching chats or refreshing the browser does not stop a turn.
@@ -49,7 +86,9 @@ MIT-licensed software from Thesys, not OpenAI's private application source.
 
 ## Deliberate limitations
 
-Agent execution in this release is **conversation + clarify only**, not a remote terminal. Native terminal, browser, file and delegation controls are not connected. The control centre observes existing native work through read-only gateway/session metadata, without controlling it. Full agent tools remain disabled until their approvals and authorization can be safely bridged.
+The library-only fallback permits **conversation + clarify only**. Full tools and
+task controls require native mode above. Host statistics always use a separate
+read-only metadata adapter.
 
 Website credential inputs are visibly disabled. `/api/credentials` fails closed with 501 and does not parse or forward the payload. No native vault bridge is wired; never enter a password, token, payment detail or login code in chat/question cards. There are no working website-login forms yet.
 
@@ -108,7 +147,8 @@ from Cloudflare Access, **first deploy and verify the ZeroFrame gate at the orig
 then replace the exact hostname's Access/tunnel checks. Keep private rollback
 copies of the prior configuration; never disable authentication on other hosts.
 ZeroFrame mode refuses missing configuration and does not inherit loopback access.
-Restarting the app clears its memory-only chats; check for active work first.
+Restarting the app clears library-only chats; check for active work before a mode
+migration. Native tasks and their ledger survive HSUH restarts.
 
 ### Cloudflare Access alternative
 

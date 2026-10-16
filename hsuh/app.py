@@ -3,6 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import secrets
 import os
+import inspect
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +18,30 @@ STATIC = Path(__file__).parent / 'static'
 class Message(BaseModel):
     model_config = ConfigDict(extra='forbid')
     message: str = Field(min_length=1, max_length=12000)
+    request_id: str | None = Field(default=None, max_length=160, pattern=r'^[A-Za-z0-9_-]+$')
+
+
+class TaskControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    task_id: str | None = Field(default=None, max_length=160)
+
+
+class Approval(TaskControl):
+    request_id: str = Field(min_length=1, max_length=160)
+    choice: str = Field(pattern=r'^(once|session|deny)$')
+
+
+class Guidance(TaskControl):
+    message: str = Field(min_length=1, max_length=12000)
+
+
+class OpenSession(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    session_id: str = Field(min_length=1, max_length=160, pattern=r'^[A-Za-z0-9_-]+$')
+
+
+async def resolved(value):
+    return await value if inspect.isawaitable(value) else value
 
 
 class Answers(BaseModel):
@@ -117,7 +142,12 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
     from .quota import QuotaReader
     from .access import AccessGate
     from .activity import ActivityReader
-    manager = ChatManager()
+    native = os.environ.get('HSUH_NATIVE_CONTROL') == '1'
+    if native:
+        from .native import NativeManager
+        manager = NativeManager()
+    else:
+        manager = ChatManager()
     quota = QuotaReader()
     activity = ActivityReader()
     token = secrets.token_urlsafe(32)
@@ -167,11 +197,13 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
 
     @app.get('/api/status')
     async def status():
-        return {'integration': 'Hermes Python library', 'mode':'Conversation + clarify only',
-                'storage':'VPS process memory; cleared on restart', 'max_parallel':2,
+        return {'integration': 'Native Hermes gateway' if native else 'Hermes Python library',
+                'native_control':native,
+                'mode':'Native tools, tasks and approvals' if native else 'Conversation + clarify only',
+                'storage':'Native Hermes transcripts + private task ledger' if native else 'VPS process memory; cleared on restart', 'max_parallel':None if native else 2,
                 'credentials': {'enabled':False, 'reason':'Native vault bridge is not wired. Do not enter secrets in chat.'},
                 'model': manager.model, 'active': manager.active_count,
-                'background_jobs':{'scope':'HSUH controls its own turns only', 'native_delegated_jobs':'Read-only metadata via /api/activity; native job execution control is not connected'},
+                'background_jobs':{'scope':'Native run-specific stop and steering; native scheduler controls' if native else 'HSUH controls its own turns only', 'native_delegated_jobs':'Native tools and gateway policy' if native else 'Read-only metadata via /api/activity'},
                 'access':'ZeroFrame passkey' if sso else 'Cloudflare Access JWT' if access else 'Loopback only'}
 
     @app.get('/api/quota')
@@ -184,23 +216,43 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
 
     @app.get('/api/chats')
     async def chats():
-        return manager.list()
+        return await resolved(manager.list())
+
+    @app.get('/api/control')
+    async def control():
+        if not native:
+            return {'enabled':False, 'note':'Native control is not configured on this host'}
+        await manager.list()
+        return await manager.control()
+
+    @app.post('/api/sessions/open')
+    async def open_session(payload: OpenSession):
+        if not native:
+            raise HTTPException(501, 'Native control is not configured')
+        return await manager.create(payload.session_id)
+
+    @app.post('/api/jobs/{job_id}/{action}')
+    async def job_action(job_id: str, action: str):
+        if not native:
+            raise HTTPException(501, 'Native control is not configured')
+        return await manager.job_action(job_id, action)
 
     @app.get('/api/activity')
     async def native_activity():
         result = dict(await asyncio.to_thread(activity.read))
         result['hsuh'] = {'conversations': len(manager.chats), 'active_turns': manager.active_count,
                           'queued': sum(c['task'] is not None and c['task']['state'] == 'queued' for c in manager.chats.values()),
-                          'workers': len(manager.processes), 'max_workers': 2}
+                          'workers': len(manager.processes), 'max_workers': None if native else 2,
+                          'native_control':native}
         return result
 
     @app.post('/api/chats')
     async def create_chat():
-        return manager.create()
+        return await resolved(manager.create())
 
     @app.get('/api/chats/{chat_id}')
     async def get_chat(chat_id: str):
-        return manager.get(chat_id)
+        return await resolved(manager.get(chat_id))
 
     @app.delete('/api/chats/{chat_id}')
     async def delete_chat(chat_id: str):
@@ -209,6 +261,8 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
 
     @app.post('/api/chats/{chat_id}/messages', status_code=202)
     async def message(chat_id: str, payload: Message):
+        if native:
+            return await manager.submit(chat_id, payload.message, payload.request_id)
         return manager.submit(chat_id, payload.message)
 
     @app.post('/api/chats/{chat_id}/answers')
@@ -216,9 +270,24 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
         return await manager.answer(chat_id, payload.question_id, payload.answers)
 
     @app.post('/api/chats/{chat_id}/stop')
-    async def stop(chat_id: str):
-        await manager.stop(chat_id)
-        return manager.get(chat_id)
+    async def stop(chat_id: str, payload: TaskControl):
+        if native:
+            await manager.stop(chat_id, payload.task_id)
+        else:
+            await manager.stop(chat_id)
+        return await resolved(manager.get(chat_id))
+
+    @app.post('/api/chats/{chat_id}/approval')
+    async def approve(chat_id: str, payload: Approval):
+        if not native:
+            raise HTTPException(501, 'Native control is not configured')
+        return await manager.approve(chat_id, payload.task_id, payload.request_id, payload.choice)
+
+    @app.post('/api/chats/{chat_id}/steer')
+    async def steer(chat_id: str, payload: Guidance):
+        if not native:
+            raise HTTPException(501, 'Native control is not configured')
+        return await manager.steer(chat_id, payload.task_id, payload.message)
 
     @app.post('/api/credentials')
     async def credentials():

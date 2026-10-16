@@ -1715,3 +1715,54 @@ progress::-moz-progress-bar {
     transform: none;
   }
 }
+
+/* Native controls share the operations workspace's measured, compact hierarchy. */
+#control-root { display:none; min-width:0; overflow:auto; padding:32px; grid-column:2 / -1; }
+.workspace[data-view="work"] #control-root { display:block; }
+.workspace[data-view="work"] #overview-root,
+.workspace[data-view="work"] .chat-panel,
+.workspace[data-view="work"] .inspector { display:none; }
+.control-heading { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:24px; }
+.control-heading h1 { margin:7px 0; font-size:28px; letter-spacing:-1px; }
+.control-heading p { color:var(--muted); font-size:12px; }
+.control-tabs { display:flex; gap:6px; border-bottom:1px solid var(--edge); padding-bottom:12px; margin-bottom:16px; }
+.control-tabs button { min-height:38px; padding:0 18px; background:transparent; border-color:transparent; }
+.control-tabs button[aria-selected="true"] { background:var(--panel); border-color:var(--edge); color:var(--signal); }
+#control-content { display:grid; gap:12px; padding:10px 0 30px; max-width:1200px; }
+.native-task,.toolset-row { border:1px solid var(--edge); background:var(--panel); padding:18px 20px; border-radius:8px; min-width:0; }
+.native-task h3,.toolset-row h3 { margin:0; font-size:14px; overflow-wrap:anywhere; }
+.native-task .panel-heading,.toolset-row .panel-heading { margin-bottom:10px; gap:16px; }
+.native-task .task-card { margin-top:12px; }
+.control-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.control-actions button { min-height:38px; }
+.control-empty { border:1px dashed var(--edge); border-radius:8px; padding:35px; color:var(--muted); line-height:1.8; font-size:13px; }
+.tool-search { display:grid; gap:9px; font-size:11px; color:var(--muted); }
+.tool-search input { height:42px; border:1px solid var(--edge); border-radius:5px; background:var(--panel); color:var(--ink); padding:0 12px; font:inherit; }
+.tool-catalog { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:12px; }
+.toolset-row p { overflow-wrap:anywhere; line-height:1.7; }
+#control-content > .native-session { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:16px; border:1px solid var(--edge); border-radius:7px; }
+#control-content > .native-session h3 { font-size:13px; margin:0 0 5px; overflow-wrap:anywhere; }
+.tool-feed { list-style:none; margin:16px 0 0; padding:0; max-height:260px; overflow:auto; }
+.tool-feed li { display:grid; grid-template-columns:65px 1fr; gap:10px; border-top:1px solid var(--edge); padding:9px 0; font-size:11px; line-height:1.7; }
+.tool-feed time { color:var(--muted); font:10px ui-monospace,monospace; padding-top:3px; }
+.tool-feed span { white-space:pre-wrap; overflow-wrap:anywhere; }
+.approval-card { margin:15px 0; padding:20px; border:1px solid #a99454; border-radius:8px; background:#27251e; }
+.approval-card h3 { margin:9px 0; font-size:17px; }
+.approval-card p { line-height:1.7; font-size:12px; }
+.approval-card pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:13px; background:#191a16; border-radius:5px; font-size:12px; max-height:240px; overflow:auto; }
+.state-dot.waiting_for_approval { background:#d7bd71; }
+.state-dot.stopping,.state-dot.reconnecting { background:#bb9868; }
+@media (max-width:720px) {
+  .mobile-nav { grid-template-columns:repeat(5,1fr); }
+  .workspace[data-view="work"] #control-root { display:block; grid-column:1; padding:22px 15px; }
+  .workspace[data-view="work"] .sidebar { display:none; }
+  .control-heading { align-items:flex-start; gap:10px; }
+  .control-heading h1 { font-size:25px; }
+  .control-heading p { font-size:10px; }
+  .control-tabs { gap:0; }
+  .control-tabs button { flex:1; padding:0 6px; min-height:44px; font-size:11px; }
+  .native-task,.toolset-row { padding:15px; }
+  .control-actions button,.tool-search input,#control-content > .native-session button { min-height:44px; }
+  .approval-card { padding:15px; }
+  .control-heading .signal { white-space:nowrap; }
+}
