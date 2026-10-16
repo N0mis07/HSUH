@@ -12,9 +12,19 @@ class Gateway:
         self.calls = []
         self.runs = {}
         self.fail_accept = False
+        self.job = {'id':'fixture-job','name':'Fixture job','enabled':True,'prompt':'private job instructions'}
 
     async def request(self, method, path, body=None, key=None):
         self.calls.append((method, path, body, key))
+        if path == '/v1/toolsets':
+            return {'data':[{'name':'terminal','enabled':True,'configured':True,'tools':['terminal'],'credential':'private configuration'}]}
+        if path.startswith('/api/sessions?'):
+            return {'data':[]}
+        if path.startswith('/api/jobs?'):
+            return {'jobs':[self.job]}
+        if path.startswith('/api/jobs/'):
+            self.job['enabled'] = path.endswith('/resume')
+            return {'job':self.job}
         if path == '/api/sessions':
             return {'session': {'id': body['id']}}
         if '/messages?' in path:
@@ -147,8 +157,30 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await client.post('/api/sessions/open',json={'session_id':'existing'})).status_code, 403)
             headers={'Origin':'http://127.0.0.1:8110','X-HSUH-Request':'1'}
             chat=(await client.post('/api/chats',json={},headers=headers)).json()
+            self.assertEqual((await client.post('/api/chats/'+chat['id']+'/messages',json={'message':'Missing submission ID'},headers=headers)).status_code,422)
             chat=(await client.post('/api/chats/'+chat['id']+'/messages', json={'message':'Test native tools','request_id':'r1'},headers=headers)).json()
             self.assertTrue(chat['native'])
             self.assertEqual((await client.post('/api/chats/'+chat['id']+'/stop',json={'task_id':'stale'},headers=headers)).status_code,409)
             self.assertEqual((await client.post('/api/chats/'+chat['id']+'/approval',json={'task_id':chat['task']['id'],'request_id':'x','choice':'always'},headers=headers)).status_code,422)
             self.assertFalse((await client.get('/api/status')).json()['credentials']['enabled'])
+
+    async def test_scheduler_actions_are_allowlisted_and_private_fields_stay_server_side(self):
+        for action, enabled in [('pause',False),('resume',True)]:
+            result = await self.manager.job_action('fixture-job',action)
+            self.assertEqual(result['job']['enabled'], enabled)
+            self.assertNotIn('prompt',result['job'])
+        with self.assertRaises(HTTPException):
+            await self.manager.job_action('../other','pause')
+        with self.assertRaises(HTTPException):
+            await self.manager.job_action('fixture-job','delete')
+        control = str(await self.manager.control())
+        self.assertNotIn('private job instructions',control)
+        self.assertNotIn('private configuration',control)
+
+    async def test_undelivered_steering_is_visible_in_terminal_receipt(self):
+        c = await self.manager.create()
+        c = await self.manager.submit(c['id'],'Fixture work','request-1')
+        next(iter(self.gateway.runs.values())).update(status='completed',pending_steer='Late guidance')
+        c = await self.manager.get(c['id'])
+        self.assertTrue(c['task']['undelivered_guidance'])
+        self.assertIn('not delivered',c['task']['summary'])

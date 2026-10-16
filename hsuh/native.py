@@ -186,8 +186,12 @@ class NativeManager:
             # No system messages, private reasoning, tool arguments or raw tool results.
             if m.get('role') not in {'user','assistant'} or not isinstance(m.get('content'), str) or not m['content']:
                 continue
+            content = m['content'][:100000]
+            # Native delivery envelopes are model-routing instructions, not chat copy.
+            guidance = re.fullmatch(r'\[OUT-OF-BAND USER MESSAGE[^\n]*\]\n(.*)\n\[/OUT-OF-BAND USER MESSAGE\]', content, re.DOTALL) if m['role'] == 'user' else None
             messages.append({'id':str(m.get('id', len(messages))), 'role':m['role'],
-                             'content':m['content'][:100000], 'at':m.get('timestamp')})
+                             'content':guidance.group(1) if guidance else content,
+                             'kind':'guidance' if guidance else 'message', 'at':m.get('timestamp')})
         task = c.get('task')
         # Admission can be visible before Hermes writes its first transcript row.
         if task and task.get('outbox') and task['state'] in BUSY:
@@ -294,6 +298,9 @@ class NativeManager:
             'waiting_for_approval':'Waiting for your decision', 'stopping':'Stop requested. Waiting for native execution to settle.'}.get(state, 'Running in the native Hermes gateway')
         if state in TERMINAL:
             task['ended_at'] = status.get('updated_at') or time.time()
+            if status.get('pending_steer'):
+                task['undelivered_guidance'] = True
+                task['summary'] += ' Latest guidance was not delivered; send it as a new message.'
         usage = status.get('usage')
         if isinstance(usage, dict):
             task['usage'] = {k:v for k,v in usage.items() if k in {'input_tokens','output_tokens','total_tokens','cache_read_tokens','cache_write_tokens'} and isinstance(v, (int,float))}

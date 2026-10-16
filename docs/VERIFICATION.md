@@ -2,10 +2,11 @@
 
 ## Native Hermes control, 2026-10-16
 
-- **44 Linux Python tests pass**, including seven native adapter regressions for
+- **46 Linux Python tests pass**, including nine native adapter regressions for
   restart recovery, lost-admission idempotency, exact-run stop ownership, pending
   approval IDs, private event projection and owner/origin/body guards. Three
-  production-controller deferred-send scenarios and OpenUI parser cases pass.
+  production-controller deferred-send scenarios, a fourth new-conversation race
+  scenario and OpenUI parser cases pass.
 - A real native terminal task returned the requested harmless marker; recreating
   the adapter recovered its exact task and persisted transcript. The runtime
   remained the configured model/provider.
@@ -21,9 +22,16 @@
   checkout, preserving unattended, webhook, cron and single-query behavior. The
   first run from inside the live profile was blocked in three existing tests by
   the native real-home I/O guard; the isolated run passes all 254.
-- Real hosted approval/guidance and in-flight website restart acceptance are in
-  progress. An idle-only native reload is queued to protect existing ticket work.
-  Independent security review remains pending; tests do not imply that review.
+- Hosted guidance reached the exact native run and its final response included
+  the added marker. That same run was observed active immediately before an HSUH
+  service restart, recovered active afterward, and then completed normally.
+- The user explicitly chose to interrupt the other active native run for the
+  compatibility reload. Native stop settled before gateway restart. Both Telegram
+  and API returned connected. A real native approval card displayed the exact
+  pending operation; Deny was submitted and Hermes confirmed no execution or
+  workaround. The stricter manual test mode was restored to the original smart
+  mode, and saved permanent approvals were verified unchanged.
+- Independent security review remains pending; tests do not imply that review.
 
 ## Operations control centre and OpenUI, 2026-10-16
 

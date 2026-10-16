@@ -44,7 +44,7 @@ $('#new-chat').onclick=()=>newChat().catch(e=>notice(e.message));
 $('#delete-chat').onclick=async()=>{if(!current || !confirm(currentNative?'Remove this conversation from HSUH? Its native Hermes transcript is retained. Active tasks must be stopped first.':'Delete this HSUH conversation and stop its active turn?'))return; try {await api('chats/'+current,'DELETE'); drafts.delete(current); current=null; shownRevision=null; chats=await api('chats'); if(chats.length)await selectChat(chats[0].id); else await newChat();}catch(e){notice(e.message);}};
 function messageNode(m) {
   const a=el('article',undefined,'message '+m.role); a.id='message-'+m.id;
-  const meta=el('div',undefined,'message-meta'); meta.append(el('strong',m.role==='assistant'?'Hermes':'You'),el('span',time(m.at)));
+  const meta=el('div',undefined,'message-meta'); meta.append(el('strong',m.role==='assistant'?'Hermes':m.kind==='guidance'?'You · guidance':'You'),el('span',time(m.at)));
   const content=el('div',undefined,'message-body');
   // Model text never becomes HTML. OpenUI uses a fixed, locally bundled component library.
   const pattern=/```([^\n]*)\n([\s\S]*?)```/g;let cursor=0;
@@ -72,7 +72,7 @@ function approvalNode(t,chatId){
   const a=t.approval,f=el('section',undefined,'approval-card');f.setAttribute('aria-label','Native approval request');
   f.append(el('span','HERMES / PERMISSION','eyebrow'),el('h3','Your decision is needed'),el('p',a.description||'Hermes paused this task for approval. Review the operation before allowing it.'),el('pre',a.command||'Native operation'),el('p','This decision applies to the exact pending request.','fine'));
   const actions=el('div',undefined,'control-actions');
-  for(const choice of a.choices){const button=el('button',({once:'Allow once',session:'Allow for this session',deny:'Deny'})[choice],choice==='deny'?'quiet':'primary');button.type='button';button.onclick=async()=>{for(const n of actions.children)n.disabled=true;try{await api('chats/'+chatId+'/approval','POST',{task_id:t.id,request_id:a.request_id,choice});await tick();await controls();}catch(e){notice(e.message);for(const n of actions.children)n.disabled=false;}};actions.append(button);}
+  for(const choice of a.choices){const button=el('button',({once:'Allow once',session:'Allow for this task',deny:'Deny'})[choice],choice==='deny'?'quiet':'primary');button.type='button';button.onclick=async()=>{for(const n of actions.children)n.disabled=true;try{await api('chats/'+chatId+'/approval','POST',{task_id:t.id,request_id:a.request_id,choice});await tick();await controls();}catch(e){notice(e.message);for(const n of actions.children)n.disabled=false;}};actions.append(button);}
   f.append(actions);return f;
 }
 function questionNode(question) {

@@ -262,6 +262,8 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
     @app.post('/api/chats/{chat_id}/messages', status_code=202)
     async def message(chat_id: str, payload: Message):
         if native:
+            if not payload.request_id:
+                raise HTTPException(422, 'A submission ID is required. Reload the website before sending.')
             return await manager.submit(chat_id, payload.message, payload.request_id)
         return manager.submit(chat_id, payload.message)
 
