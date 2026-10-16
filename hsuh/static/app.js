@@ -33,13 +33,13 @@ function renderList() {
     b.append(dot,copy); b.onclick=()=>selectChat(c.id); return b;
   }));
 }
-async function selectChat(id) {
+async function selectChat(id,show=true) {
   if(current) drafts.set(current,$('#message').value);
   current=id;currentTask=null;currentNative=false;currentReady=false;$('#send').disabled=true;$('#message').disabled=true;
-  shownRevision=null; shownQuestion=null; $('#message').value=drafts.get(id)||''; renderList(); view('chat');
+  shownRevision=null; shownQuestion=null; $('#message').value=drafts.get(id)||''; renderList(); if(show)view('chat');
   await updateChat();
 }
-async function newChat() {if(creatingChat)return;creatingChat=true;$('#send').disabled=true;$('#message').disabled=true;try{const c=await api('chats','POST',{}); chats=await api('chats'); await selectChat(c.id);}finally{creatingChat=false;await updateChat();}$('#message').focus();}
+async function newChat(show=true) {if(creatingChat)return;creatingChat=true;$('#send').disabled=true;$('#message').disabled=true;try{const c=await api('chats','POST',{}); chats=await api('chats'); await selectChat(c.id,show);}finally{creatingChat=false;await updateChat();}if(show)$('#message').focus();}
 $('#new-chat').onclick=()=>newChat().catch(e=>notice(e.message));
 $('#delete-chat').onclick=async()=>{if(!current || !confirm(currentNative?'Remove this conversation from HSUH? Its native Hermes transcript is retained. Active tasks must be stopped first.':'Delete this HSUH conversation and stop its active turn?'))return; try {await api('chats/'+current,'DELETE'); drafts.delete(current); current=null; shownRevision=null; chats=await api('chats'); if(chats.length)await selectChat(chats[0].id); else await newChat();}catch(e){notice(e.message);}};
 function messageNode(m) {
@@ -201,7 +201,7 @@ let installPrompt;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('#install').hidden=false;});
 $('#install').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;$('#install').hidden=true;}};
 if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
-try{chats=await api('chats');if(chats.length)await selectChat(chats[0].id);else await newChat();view('overview');await tick();telemetry();activity();quota();}catch(e){notice(e.message);}
+try{chats=await api('chats');if(chats.length)await selectChat(chats[0].id,false);else await newChat(false);await tick();telemetry();activity();quota();}catch(e){notice(e.message);}
 setInterval(tick,2000);setInterval(telemetry,5000);setInterval(activity,12000);setInterval(()=>{if(!document.hidden)quota();},65000);
 setInterval(()=>{if($('.workspace').dataset.view==='work')controls();},4000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();telemetry();activity();}});

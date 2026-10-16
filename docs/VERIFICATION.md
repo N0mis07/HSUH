@@ -5,8 +5,9 @@
 - **46 Linux Python tests pass**, including nine native adapter regressions for
   restart recovery, lost-admission idempotency, exact-run stop ownership, pending
   approval IDs, private event projection and owner/origin/body guards. Three
-  production-controller deferred-send scenarios, a fourth new-conversation race
-  scenario and OpenUI parser cases pass.
+  production-controller scenarios cover deferred drafts, pending conversation
+  creation and navigation during initial hydration (five cases). OpenUI parser
+  cases pass.
 - A real native terminal task returned the requested harmless marker; recreating
   the adapter recovered its exact task and persisted transcript. The runtime
   remained the configured model/provider.

@@ -12,7 +12,7 @@ class Element {
   focus() {}
   querySelectorAll() { return []; }
 }
-async function fixture() {
+async function fixture({navigationDuringLoad=false}={}) {
   const elements = new Map();
   const get = selector => {
     if(!elements.has(selector)) elements.set(selector, new Element());
@@ -25,7 +25,9 @@ async function fixture() {
   const chat = id => ({id,title:id,messages:[],tasks:[],question:null,task:null,revision:0});
   const response = data => ({ok:true,json:async()=>data});
   const document = {querySelector:get,querySelectorAll:()=>[],createElement:()=>new Element(),addEventListener(){}};
+  let firstList=true;
   const fetch = async (url, options) => {
+    if(url==='/api/chats' && options.method==='GET' && firstList){firstList=false;if(navigationDuringLoad)get('.workspace').dataset.view='work';}
     if(url==='/api/chats' && options.method==='POST')return creation;
     if(url==='/api/chats/a/messages' && options.method==='POST') {
       posted=JSON.parse(options.body);
@@ -90,6 +92,10 @@ async function main() {
     f.resolveCreate();await creating;
     assert.equal(f.get('#send').disabled,false);
   }
-  console.log('Frontend conversation races: 4 scenarios passed (full production app.js).');
+  {
+    const f=await fixture({navigationDuringLoad:true});
+    assert.equal(f.get('.workspace').dataset.view,'work','Initial chat hydration must preserve a view selected during loading');
+  }
+  console.log('Frontend conversation races: 5 scenarios passed (full production app.js).');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
