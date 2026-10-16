@@ -169,6 +169,8 @@ class NativeManager:
     def _public_task(self, task, event_limit=100):
         result = {k:copy.deepcopy(v) for k,v in task.items() if k not in {'outbox','fingerprint','request_key','events'}}
         result['events'] = copy.deepcopy(task.get('events', [])[-event_limit:]) if event_limit else []
+        # Use the execution host clock; a phone/desktop clock may differ from the VPS.
+        result['elapsed_seconds'] = max(0, int((task.get('ended_at') or time.time())-(task.get('started_at') or task['created_at'])))
         return result
 
     async def get(self, chat_id):

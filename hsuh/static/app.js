@@ -21,7 +21,7 @@ const statsCache=new Map();
 const statsEvent=(name,data)=>{statsCache.set(name,data);if(typeof CustomEvent==='function')window.dispatchEvent(new CustomEvent('hsuh:'+name,{detail:data}));};
 window.addEventListener('hsuh:ui-ready',()=>{for(const [name,data] of statsCache)statsEvent(name,data);});
 function time(ts) { return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Not started'; }
-function elapsed(t) { const s=Math.max(0,Math.floor(((t.ended_at || Date.now()/1000)-(t.started_at || t.created_at)))); return s<60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`; }
+function elapsed(t) { const s=t.elapsed_seconds??Math.max(0,Math.floor(((t.ended_at || Date.now()/1000)-(t.started_at || t.created_at)))); return s<60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`; }
 function stateLabel(state) {return ({pending_input:'Needs your answer', waiting_for_approval:'Approval needed', stopping:'Stopping',reconnecting:'Reconnecting', interrupted:'Interrupted',queued:'Queued', running:'Running', completed:'Completed', failed:'Failed', cancelled:'Stopped'})[state] || state;}
 function renderList() {
   $('#chat-count').textContent=chats.length;
@@ -164,7 +164,7 @@ function renderControl(){const root=$('#control-content');if(!controlData?.enabl
   }else{
     nodes.push(el('p','Ask Hermes to use these tools in chat. Availability follows the native API platform configuration and installed credentials. Tools execute on the VPS.','fine'));
     const label=el('label','Find a tool','tool-search'),input=el('input');input.type='search';input.placeholder='Search terminal, browser, memory…';label.append(input);const list=el('div',undefined,'tool-catalog');
-    const filter=()=>{const q=input.value.toLowerCase();list.replaceChildren(...controlData.tools.filter(t=>`${t.name} ${t.description} ${(t.tools||[]).join(' ')}`.toLowerCase().includes(q)).map(t=>{const row=el('article',undefined,'toolset-row'),h=el('div',undefined,'panel-heading');h.append(el('h3',t.label||t.name),el('span',t.enabled?(t.configured?'Available':'Setup needed'):'Disabled','signal '+(t.enabled&&t.configured?'good':'warning')));row.append(h,el('p',t.description||'','fine'),el('p',(t.tools||[]).join(' · '),'fine mono'));return row;}));};input.oninput=filter;filter();nodes.push(label,list);
+    const filter=()=>{const q=input.value.toLowerCase();list.replaceChildren(...controlData.tools.filter(t=>`${t.name} ${t.description} ${(t.tools||[]).join(' ')}`.toLowerCase().includes(q)).map(t=>{const row=el('article',undefined,'toolset-row'),h=el('div',undefined,'panel-heading');h.append(el('h3',t.label||t.name),el('span',t.name==='clarify'?'Chat replies':t.enabled?(t.configured?'Available':'Setup needed'):'Disabled','signal '+(t.enabled&&t.configured?'good':'warning')));row.append(h,el('p',t.name==='clarify'?'Reply in the conversation. Native API clarification cards are not available.':t.description||'','fine'),el('p',(t.tools||[]).join(' · '),'fine mono'));return row;}));};input.oninput=filter;filter();nodes.push(label,list);
   }
   root.replaceChildren(...nodes);$('#control-note').textContent=controlData.note;$('#work-running').textContent=controlData.tasks.filter(t=>busyStates.has(t.state)).length+' active';
 }
