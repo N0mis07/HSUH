@@ -183,7 +183,7 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
 
     @app.get('/assets/{name}')
     async def asset(name: str):
-        if name not in {'app.js', 'openui.js', 'licenses.txt', 'style.css', 'mascot.svg', 'icon-192.png', 'icon-512.png'}:
+        if name not in {'app.js', 'openui.js', 'licenses.txt', 'style.css', 'stats.css', 'mascot.svg', 'icon-192.png', 'icon-512.png'}:
             raise HTTPException(404)
         return FileResponse(STATIC / name)
 

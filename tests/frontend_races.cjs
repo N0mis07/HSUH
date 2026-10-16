@@ -46,7 +46,7 @@ async function fixture({navigationDuringLoad=false}={}) {
   };
   const source=fs.readFileSync(path.join(__dirname,'../hsuh/static/app.js'),'utf8');
   const context=vm.createContext({document,fetch,navigator:{},window:{addEventListener(){}},setInterval(){},setTimeout(){},console});
-  const controller=await new vm.Script('(async()=>{'+source+'\nreturn {selectChat,newChat};})()').runInContext(context);
+  const controller=await new vm.Script('(async()=>{'+source+'\nreturn {selectChat,newChat,tick};})()').runInContext(context);
   const input = value => { get('#message').value=value; get('#message').oninput?.({}); };
   const send = () => get('#composer').onsubmit({preventDefault(){}});
   return {get,input,send,controller,posted:()=>posted,resolve:()=>resolvePost(response({})),resolveCreate:()=>resolveCreate(response(chat('c')))};
@@ -96,6 +96,12 @@ async function main() {
     const f=await fixture({navigationDuringLoad:true});
     assert.equal(f.get('.workspace').dataset.view,'work','Initial chat hydration must preserve a view selected during loading');
   }
-  console.log('Frontend conversation races: 5 scenarios passed (full production app.js).');
+  {
+    const f=await fixture();
+    const button=f.get('#chat-list').children[1];
+    await f.controller.tick();
+    assert.equal(f.get('#chat-list').children[1],button,'Unchanged polling must preserve chat buttons so clicks and keyboard focus are not lost');
+  }
+  console.log('Frontend conversation races: 6 scenarios passed (full production app.js).');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

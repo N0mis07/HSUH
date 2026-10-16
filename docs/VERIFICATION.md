@@ -1,5 +1,39 @@
 # Verification record
 
+## Rounded chat and Mote, 2026-10-16
+
+- Chat is the default view. The original Mote buddy appears in the welcome,
+  conversation header and assistant replies, with status derived from the
+  selected task. The chat summary contains only RAM, one Codex quota window and
+  active agents. Detailed readings and native controls have separate views.
+- The hosted owner passkey session loaded chat, actual resource/quota readings,
+  native tool availability and detailed stats. Conversation switching and buddy
+  reply avatars were verified against an existing completed native transcript.
+- The hosted page was also checked at **390 by 844px**: document width stayed
+  390px, all four panel navigation buttons measured 44px high, and the complete
+  composer remained inside the viewport. Work & tools and Stats opened without
+  horizontal page overflow. The normal desktop viewport was restored afterward.
+- Fictional browser fixtures covered empty chat, assistant replies, active
+  steering/stop controls, expandable task activity and a pending approval card.
+  Suggested messages filled a draft without sending a request to Hermes.
+- **48 Linux backend tests**, **14 focused Windows app/SSO tests**, OpenUI parser
+  safety cases and **six production-controller frontend regressions** pass.
+  The new unchanged-poll regression failed before preserving chat button identity,
+  which prevents background refreshes from interrupting clicks or keyboard focus.
+  Bundle build, publication guard and both GitHub CI checks passed.
+- The new stats stylesheet uses the authenticated asset allowlist. Anonymous
+  API and stylesheet requests are denied by both the application and public edge.
+  No native gateway restart was needed for the chat redesign.
+- The chosen layout, tokens, buddy states and acceptance checks are recorded in
+  `.interface-design/system.md`. Live screenshots stay private; no conversation
+  text or personal quota balances are committed with this record.
+- Phone checks use a browser viewport. Physical-phone QR scanning and installing
+  the PWA on an actual device remain separate from these checks.
+
+The sections below are historical acceptance records. Later work supersedes
+earlier implementation limits where explicitly stated; see the README for the
+current native and fallback modes.
+
 ## Native Hermes control, 2026-10-16
 
 - **48 Linux Python tests pass**, including eleven native adapter regressions for

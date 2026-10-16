@@ -14,22 +14,28 @@ async function api(path, method='GET', body) {
   if(!r.ok) { let d; try {d=await r.json();} catch {} throw new Error(typeof d?.detail === 'string' ? d.detail : `Request failed (${r.status}). Refresh to renew sign-in if needed.`); }
   return r.json();
 }
-function panel(name) { $('.workspace').dataset.panel=name; document.querySelectorAll('[data-panel].mobile-nav button, .mobile-nav button').forEach(n => n.setAttribute('aria-pressed',String(n.dataset.panel===name))); }
-function view(name) { $('.workspace').dataset.view=name; if(name==='chat')panel('chat');if(name==='work')controls(); document.querySelectorAll('[data-view]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.view===name))); }
-document.querySelectorAll('[data-view]').forEach(n=>n.onclick=()=>view(n.dataset.view));
+function syncNavigation() { const w=$('.workspace'); document.querySelectorAll('button[data-view], .mobile-nav button[data-panel]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.panel?w.dataset.view==='chat'&&w.dataset.panel===n.dataset.panel:n.dataset.view===w.dataset.view&&(w.dataset.view!=='chat'||w.dataset.panel==='chat')))); }
+function panel(name) { $('.workspace').dataset.panel=name; syncNavigation(); }
+function view(name) { $('.workspace').dataset.view=name; if(name==='chat')panel('chat');if(name==='work')controls(); syncNavigation(); }
+document.querySelectorAll('button[data-view]').forEach(n=>n.onclick=()=>view(n.dataset.view));
 document.querySelectorAll('.mobile-nav button[data-panel]').forEach(n=>n.onclick=()=>{view('chat');panel(n.dataset.panel);});
+document.querySelectorAll('[data-prompt]').forEach(n=>n.onclick=()=>{view('chat');const input=$('#message');if(input.disabled)return;input.value=n.dataset.prompt;input.oninput();input.focus();});
 const statsCache=new Map();
 const statsEvent=(name,data)=>{statsCache.set(name,data);if(typeof CustomEvent==='function')window.dispatchEvent(new CustomEvent('hsuh:'+name,{detail:data}));};
 window.addEventListener('hsuh:ui-ready',()=>{for(const [name,data] of statsCache)statsEvent(name,data);});
 function time(ts) { return ts ? new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Not started'; }
 function elapsed(t) { const s=t.elapsed_seconds??Math.max(0,Math.floor(((t.ended_at || Date.now()/1000)-(t.started_at || t.created_at)))); return s<60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`; }
 function stateLabel(state) {return ({pending_input:'Needs your answer', waiting_for_approval:'Approval needed', stopping:'Stopping',reconnecting:'Reconnecting', interrupted:'Interrupted',queued:'Queued', running:'Running', completed:'Completed', failed:'Failed', cancelled:'Stopped'})[state] || state;}
+let shownList=null;
 function renderList() {
+  const revision=JSON.stringify([current,chats.map(c=>[c.id,c.title,c.task?.state])]);
+  if(shownList===revision)return;
+  shownList=revision;
   $('#chat-count').textContent=chats.length;
   $('#chat-list').replaceChildren(...chats.map(c=>{
     const b=el('button',undefined,'chat-item'+(c.id===current?' selected':'')); b.dataset.chatId=c.id; b.setAttribute('aria-current',String(c.id===current));
     const dot=el('span',undefined,'state-dot '+(c.task?.state || '')); dot.setAttribute('aria-hidden','true');
-    const copy=el('span'); copy.append(el('strong',c.title),el('small',c.task?`${stateLabel(c.task.state)} · ${elapsed(c.task)}`:'Ready when you are'));
+    const copy=el('span'); copy.append(el('strong',c.title));if(c.task&&busyStates.has(c.task.state))copy.append(el('small',stateLabel(c.task.state)));
     b.append(dot,copy); b.onclick=()=>selectChat(c.id); return b;
   }));
 }
@@ -44,7 +50,9 @@ $('#new-chat').onclick=()=>newChat().catch(e=>notice(e.message));
 $('#delete-chat').onclick=async()=>{if(!current || !confirm(currentNative?'Remove this conversation from HSUH? Its native Hermes transcript is retained. Active tasks must be stopped first.':'Delete this HSUH conversation and stop its active turn?'))return; try {await api('chats/'+current,'DELETE'); drafts.delete(current); current=null; shownRevision=null; chats=await api('chats'); if(chats.length)await selectChat(chats[0].id); else await newChat();}catch(e){notice(e.message);}};
 function messageNode(m) {
   const a=el('article',undefined,'message '+m.role); a.id='message-'+m.id;
-  const meta=el('div',undefined,'message-meta'); meta.append(el('strong',m.role==='assistant'?'Hermes':m.kind==='guidance'?'You · guidance':'You'),el('span',time(m.at)));
+  const meta=el('div',undefined,'message-meta');
+  if(m.role==='assistant'){const avatar=el('img',undefined,'message-avatar');avatar.src='/assets/mascot.svg';avatar.alt='';avatar.width=32;avatar.height=32;meta.append(avatar);}
+  meta.append(el('strong',m.role==='assistant'?'Hermes':m.kind==='guidance'?'You · guidance':'You'),el('span',time(m.at)));
   const content=el('div',undefined,'message-body');
   // Model text never becomes HTML. OpenUI uses a fixed, locally bundled component library.
   const pattern=/```([^\n]*)\n([\s\S]*?)```/g;let cursor=0;
@@ -70,7 +78,7 @@ function taskNode(t) {
 }
 function approvalNode(t,chatId){
   const a=t.approval,f=el('section',undefined,'approval-card');f.setAttribute('aria-label','Native approval request');
-  f.append(el('span','HERMES / PERMISSION','eyebrow'),el('h3','Your decision is needed'),el('p',a.description||'Hermes paused this task for approval. Review the operation before allowing it.'),el('pre',a.command||'Native operation'),el('p','This decision applies to the exact pending request.','fine'));
+  f.append(el('h3','Hermes needs your permission'),el('p',a.description||'Hermes paused this task for approval. Review the operation before allowing it.'),el('pre',a.command||'Native operation'),el('p','This decision applies to the exact pending request.','fine'));
   const actions=el('div',undefined,'control-actions');
   for(const choice of a.choices){const button=el('button',({once:'Allow once',session:'Allow for this task',deny:'Deny'})[choice],choice==='deny'?'quiet':'primary');button.type='button';button.onclick=async()=>{for(const n of actions.children)n.disabled=true;try{await api('chats/'+chatId+'/approval','POST',{task_id:t.id,request_id:a.request_id,choice});await tick();await controls();}catch(e){notice(e.message);for(const n of actions.children)n.disabled=false;}};actions.append(button);}
   f.append(actions);return f;
@@ -95,11 +103,16 @@ async function updateChat() {
   const busy=c.task && busyStates.has(c.task.state);
   const steering=busy&&c.native&&c.task.state==='running';
   $('#send').disabled=creatingChat||!!busy&&!steering; $('#stop').hidden=!busy;$('#stop').disabled=c.task?.state==='stopping'||!c.task?.run_id&&c.native;
-  $('#send').textContent=steering?'Send guidance ↗':'Send ↗';
+  $('#send').textContent=steering?'Guide':'Send';
   $('#message').disabled=creatingChat||!!busy&&!steering;
-  $('#composer-hint').textContent=c.task?.state==='waiting_for_approval'?'Review the approval card above':c.task?.state==='pending_input'?'Answer the question card above':steering?'Send guidance to this running task · closing this site keeps it running':busy?'Waiting for Hermes · this task continues on the VPS':'Enter to send · Shift + Enter for a new line';
-  $('#retention-note').textContent=c.native?'Native Hermes tools, memory and transcripts. Closing the website keeps tasks running. Keep secrets out of chat.':'Chats are kept in VPS memory until deletion or server restart. Keep secrets out of chat.';
-  $('#delete-chat').textContent=c.native?'Remove':'Delete';
+  $('#composer-hint').textContent=c.task?.state==='waiting_for_approval'?'Your permission is needed above':c.task?.state==='pending_input'?'Hermes has a question for you above':steering?'Send a little guidance while Hermes works':busy?'Hermes is working on it…':'Enter to send · Shift + Enter for a new line';
+  $('#retention-note').textContent=c.native?'Your tasks keep going when you close this tab.':'Chats are kept until you delete them or the server restarts.';
+  $('#delete-chat').textContent=c.native?'Remove chat':'Delete chat';
+  const taskState=c.task?.state;
+  $('#buddy').dataset.state=taskState==='waiting_for_approval'||taskState==='pending_input'?'waiting':busy?'working':taskState==='failed'||taskState==='interrupted'?'error':'ready';
+  $('#buddy-status').textContent=taskState==='waiting_for_approval'?'Needs your permission':taskState==='pending_input'?'Has a question for you':taskState==='stopping'?'Wrapping up…':taskState==='reconnecting'?'Reconnecting…':busy?'Working on it…':taskState==='failed'?'Something needs a look':taskState==='interrupted'?'Task interrupted':'Ready when you are';
+  $('#task-history').hidden=!c.tasks.length;
+  $('#task-history-label').textContent=busy?'Working · See activity':taskState==='failed'||taskState==='interrupted'?'Task needs attention · See details':'Task activity';
   $('#welcome').hidden=c.messages.length>0;
   if(shownRevision!==c.revision){
     const scroller=$('#chat-scroll');const nearEnd=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<130;
@@ -173,30 +186,18 @@ function renderControl(){const root=$('#control-content');if(!controlData?.enabl
 }
 document.querySelectorAll('[data-work-tab]').forEach(b=>b.onclick=()=>{workTab=b.dataset.workTab;document.querySelectorAll('[data-work-tab]').forEach(n=>n.setAttribute('aria-selected',String(n===b)));renderControl();});
 async function controls(){if(controlBusy||document.hidden)return;controlBusy=true;try{controlData=await api('control');if(!$('#control-content').contains?.(document.activeElement)||!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))renderControl();}catch(e){$('#control-note').textContent=e.message;}finally{controlBusy=false;}}
-const gib=n=>(n/1024**3).toFixed(2)+' GiB';
 let telemetryBusy=false,activityBusy=false;
 async function telemetry(){
   if(telemetryBusy||document.hidden)return;telemetryBusy=true;
-  try{const d=await api('telemetry'),m=d.memory,p=m.used/m.total*100;$('#ram-percent').textContent=p.toFixed(1)+'%';$('#ram-number').textContent=gib(m.used)+' / '+gib(m.total);$('#ram-meter').value=p;$('#ram-available').textContent=gib(m.available);$('#swap').textContent=gib(d.swap.used)+' / '+gib(d.swap.total);
-  $('#processes').replaceChildren(...d.processes.slice(0,8).map(p=>{const row=el('div',undefined,'process-row');const name=el('span',p.name);name.append(el('small',String(p.pid)));row.append(name,el('span',(p.rss/1024**2).toFixed(0)+' MiB'));return row;}));$('#sample-time').textContent=`Sample ${time(d.sampled_at)} · ${d.scope}`;
-  $('#ribbon-cpu').textContent=d.cpu?d.cpu.percent.toFixed(1)+'%':'—';$('#ribbon-ram').textContent=p.toFixed(1)+'%';$('#ribbon-processes').textContent=d.process_count??'—';$('#ribbon-time').textContent=time(d.sampled_at);
-  $('#inspector-cpu').textContent=d.cpu?d.cpu.percent.toFixed(1)+'%':'—';$('#inspector-processes').textContent=d.process_count??'—';statsEvent('telemetry',d);
-  }catch{ $('#sample-time').textContent='Live telemetry unavailable · values above may be stale';statsEvent('stats-error',{source:'host',message:'Live host telemetry is unavailable.'}); }finally{telemetryBusy=false;}
+  try{const d=await api('telemetry'),m=d.memory,p=m.used/m.total*100;$('#ribbon-ram').textContent=p.toFixed(0)+'%';$('#ribbon-ram').title=`${(m.used/1024**3).toFixed(2)} of ${(m.total/1024**3).toFixed(2)} GiB used. Sampled ${time(d.sampled_at)}.`;statsEvent('telemetry',d);
+  }catch{$('#ribbon-ram').textContent='—';$('#ribbon-ram').title='Live RAM reading unavailable';statsEvent('stats-error',{source:'host',message:'Live host telemetry is unavailable.'});}finally{telemetryBusy=false;}
 }
-async function activity(){if(activityBusy||document.hidden)return;activityBusy=true;try{const d=await api('activity');$('#ribbon-agents').textContent=d.gateway?.stale?'—':d.gateway?.active_agents??'—';$('#ribbon-sessions').textContent=d.totals?.open??'—';statsEvent('activity',d);}catch{statsEvent('stats-error',{source:'activity',message:'Native activity metadata is unavailable.'});}finally{activityBusy=false;}}
+async function activity(){if(activityBusy||document.hidden)return;activityBusy=true;try{const d=await api('activity');$('#ribbon-agents').textContent=d.gateway?.stale?'—':d.gateway?.active_agents??'—';$('#ribbon-agents').title='Active Hermes agents across conversations';statsEvent('activity',d);}catch{$('#ribbon-agents').textContent='—';statsEvent('stats-error',{source:'activity',message:'Native activity metadata is unavailable.'});}finally{activityBusy=false;}}
 async function quota(){
-  $('#refresh-quota').disabled=true;
-  try{const d=await api('quota'),n=d.native,box=$('#quota');statsEvent('quota',d);$('#ribbon-quota').textContent=n.windows?.length?`${n.windows[0].label} ${(100-n.windows[0].used_percent).toFixed(0)}% left`:'Unavailable';box.replaceChildren(el('p',n.available?`${n.provider} · ${n.plan}`:'Provider quota unavailable','fine'));
-    for(const w of n.windows||[]){const row=el('div',undefined,'quota-window'),pair=el('div',undefined,'metric-pair');pair.append(el('span',w.label),el('strong',`${w.used_percent}% used`));const bar=el('progress');bar.max=100;bar.value=w.used_percent;bar.setAttribute('aria-label',w.label+' quota used');row.append(pair,bar);if(w.resets_at)row.append(el('p','Resets '+new Date(w.resets_at).toLocaleString(),'fine'));box.append(row);}
-    if(n.note)box.append(el('p',n.note,'fine'));
-    box.append(el('p',`Source: Hermes ${n.source}. Updated ${n.fetched_at?new Date(n.fetched_at).toLocaleString():'unavailable'}.`,'quota-caption'));
-    box.append(el('h3','Aperture budgets'),el('p',d.aperture.note,'fine'));
-    if(d.aperture.dashboard){const a=el('a','Open authoritative Aperture quotas ↗','quota-link');a.href=d.aperture.dashboard;a.target='_blank';a.rel='noopener noreferrer';box.append(a);}
-    box.append(el('p',`${d.note} Checked ${new Date(d.checked_at).toLocaleString()}. Refreshes at most once a minute.`,'quota-caption'));
-  }catch{statsEvent('quota',{native:{available:false,windows:[],note:'Quota source unavailable. No balance estimated.'},aperture:{note:'Unavailable.'}});$('#quota').replaceChildren(el('p','Quota sources unavailable. No balance estimated.','fine'));}finally{$('#refresh-quota').disabled=false;}
+  try{const d=await api('quota'),n=d.native,w=n.windows?.[0];statsEvent('quota',d);$('#ribbon-quota').textContent=w?`${(100-w.used_percent).toFixed(0)}% left`:'—';$('#ribbon-quota').title=w?`${w.label} limit. Open Stats for all limits and reset times.`:'Provider quota unavailable';
+  }catch{$('#ribbon-quota').textContent='—';$('#ribbon-quota').title='Provider quota unavailable';statsEvent('quota',{native:{available:false,windows:[],note:'Quota source unavailable. No balance estimated.'},aperture:{note:'Unavailable.'}});}
 }
-$('#refresh-quota').onclick=quota;
-async function tick(){if(pollBusy||document.hidden)return;pollBusy=true;try{chats=await api('chats');renderList();await updateChat();const s=await api('status');$('#connection').textContent=`Connected · ${s.active} active`;$('#ribbon-chats').textContent=chats.length;$('#runtime').textContent=(s.model?`${s.model.model} · ${s.model.provider}. `:'')+s.mode+'. '+s.access+'.';$('#runtime-scope').textContent=s.native_control?'Native gateway owns execution, tools and approvals. Website restarts preserve native work.':'Two concurrent conversation workers. Native tool execution is not configured.';}catch(e){$('#connection').textContent='Disconnected · refresh to sign in';}finally{pollBusy=false;}}
+async function tick(){if(pollBusy||document.hidden)return;pollBusy=true;try{chats=await api('chats');renderList();await updateChat();await api('status');$('#connection').textContent='Connected';$('#connection').dataset.state='connected';}catch(e){$('#connection').textContent='Disconnected · refresh to sign in';$('#connection').dataset.state='disconnected';}finally{pollBusy=false;}}
 let installPrompt;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('#install').hidden=false;});
 $('#install').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;$('#install').hidden=true;}};

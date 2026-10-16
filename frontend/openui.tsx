@@ -380,9 +380,8 @@ function Overview() {
     <div className="operations">
       <div className="overview-heading">
         <div>
-          <span className="eyebrow">HERMES / OPERATIONS</span>
-          <h1>Control centre</h1>
-          <p>Your server, running work and account limits. In view.</p>
+          <h1>Stats</h1>
+          <p>A closer look at your server and Hermes.</p>
         </div>
         <div className="sampling">
           <Status good={!failure && !!d}>
