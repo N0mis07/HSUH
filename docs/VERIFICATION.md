@@ -1,5 +1,30 @@
 # Verification record
 
+## Operations control centre and OpenUI, 2026-10-16
+
+- The final operations candidate passed **37 Python tests on Linux**, including
+  read-only native metadata projection, unavailable-source handling and gateway
+  freshness. Generated OpenUI programs are checked against the actual SDK parser;
+  valid components pass and unknown/tool-bearing/oversized programs are rejected.
+  The three existing send/draft race scenarios, syntax checks, publication scan,
+  dependency audit and both GitHub CI runs passed.
+- Desktop and 390px phone layouts were visually inspected with fictional data.
+  Navigation and the phone chat composer remained usable, with no horizontal page
+  overflow. Local fixtures never called a model or provider.
+- The real owner passkey session opened the hosted control centre. CPU/RAM
+  history, process rows, native sessions, gateway state, token/call counters and
+  Codex quota/reset data loaded from the actual VPS sources. Sample times and
+  unavailable states are visible. Existing native jobs were not restarted.
+- Through the hosted UI, a real Hermes turn produced an OpenUI checklist using
+  Stack, Heading and Checklist. It completed in five seconds. The first checkbox
+  was checked through the browser and stayed checked across polling. The actual
+  OpenUI renderer was visible, with no browser error logs. Model-generated UI is
+  labelled separately from authoritative host telemetry.
+- Anonymous access to the added activity endpoint is denied at the deployed
+  origin. Existing passkey/issuer/state/owner gates remain in place. Native job
+  execution control, durable chat persistence and physical-device PWA installation
+  remain outside this change. Independent source review is not implied by tests.
+
 ## ZeroFrame sign-in follow-up, 2026-10-16
 
 - Added optional owner-pinned ZeroFrame ES256 SSO, reusing the issuer's existing

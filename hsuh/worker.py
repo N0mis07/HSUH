@@ -38,6 +38,10 @@ def main():
             if runtime.get('api_mode') == 'codex_app_server':
                 raise RuntimeError('External tool runtime is not supported by HSUH')
             initial = json.loads(sys.stdin.readline())
+            ui_prompt = Path(__file__).with_name('openui-prompt.txt')
+            ui_instructions = ui_prompt.read_text(encoding='utf-8') if ui_prompt.is_file() else ''
+            if len(ui_instructions) > 24000:
+                raise RuntimeError('UI instructions exceed the supported bound')
 
             def clarify(questions):
                 emit({'type':'question', 'questions':questions})
@@ -57,7 +61,8 @@ def main():
                     'You cannot execute commands, browse, start delegated tasks, access existing sessions or use credentials. '
                     'Do not claim to do those things. Use clarify for consequential missing information or when explicitly asked to show a question card. '
                     'Never ask for passwords, tokens, payment data or login codes in chat or clarify. A native vault bridge is not connected. '
-                    'Give concise activity explanations, not private chain-of-thought. Be explicit about limitations.'),
+                    'Give concise activity explanations, not private chain-of-thought. Be explicit about limitations. '
+                    + ui_instructions),
             )
             # Native provider-error dumps use logs_dir even when trajectories are disabled.
             # Source-verified compatibility seam: isolate before any conversation/API call.

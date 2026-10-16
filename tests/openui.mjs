@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { isSafeOpenUI } from '../hsuh/static/openui.js';
+assert.equal(isSafeOpenUI('root = Stack([Heading("Plan"), Checklist(["Read", "Verify"])])'),true);
+assert.equal(isSafeOpenUI('root = Stack([Metric("CPU", "37%", "Supplied example")])'),true);
+assert.equal(isSafeOpenUI('root = Stack([DataTable(["Name", "State"], [["Fixture", "Ready"]])])'),true);
+assert.equal(isSafeOpenUI('root = RawHTML("<script>bad()</script>")'),false);
+assert.equal(isSafeOpenUI('root = Stack([Query("http://example.com")])'),false);
+assert.equal(isSafeOpenUI('root = Stack([Mutation("delete")])'),false);
+assert.equal(isSafeOpenUI('root = Stack([Missing("x")])'),false);
+assert.equal(isSafeOpenUI('root = Stack([unknown])'),false);
+assert.equal(isSafeOpenUI('x'.repeat(24001)),false);
+console.log('OpenUI renderer: valid component programs accepted; unsafe/unknown/oversized programs rejected.');

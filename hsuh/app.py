@@ -116,8 +116,10 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
     from .chat import ChatManager
     from .quota import QuotaReader
     from .access import AccessGate
+    from .activity import ActivityReader
     manager = ChatManager()
     quota = QuotaReader()
+    activity = ActivityReader()
     token = secrets.token_urlsafe(32)
     public_origin = public_origin or os.environ.get('HSUH_PUBLIC_ORIGIN')
     auth_mode = auth_mode or os.environ.get('HSUH_AUTH_MODE', 'access')
@@ -151,7 +153,7 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
 
     @app.get('/assets/{name}')
     async def asset(name: str):
-        if name not in {'app.js', 'style.css', 'mascot.svg', 'icon-192.png', 'icon-512.png'}:
+        if name not in {'app.js', 'openui.js', 'licenses.txt', 'style.css', 'mascot.svg', 'icon-192.png', 'icon-512.png'}:
             raise HTTPException(404)
         return FileResponse(STATIC / name)
 
@@ -169,7 +171,7 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
                 'storage':'VPS process memory; cleared on restart', 'max_parallel':2,
                 'credentials': {'enabled':False, 'reason':'Native vault bridge is not wired. Do not enter secrets in chat.'},
                 'model': manager.model, 'active': manager.active_count,
-                'background_jobs':{'scope':'HSUH conversation turns only', 'native_delegated_jobs':'unavailable: no gateway job bridge connected'},
+                'background_jobs':{'scope':'HSUH controls its own turns only', 'native_delegated_jobs':'Read-only metadata via /api/activity; native job execution control is not connected'},
                 'access':'ZeroFrame passkey' if sso else 'Cloudflare Access JWT' if access else 'Loopback only'}
 
     @app.get('/api/quota')
@@ -183,6 +185,14 @@ def create_app(port=8110, public_origin=None, access_team=None, access_audience=
     @app.get('/api/chats')
     async def chats():
         return manager.list()
+
+    @app.get('/api/activity')
+    async def native_activity():
+        result = dict(await asyncio.to_thread(activity.read))
+        result['hsuh'] = {'conversations': len(manager.chats), 'active_turns': manager.active_count,
+                          'queued': sum(c['task'] is not None and c['task']['state'] == 'queued' for c in manager.chats.values()),
+                          'workers': len(manager.processes), 'max_workers': 2}
+        return result
 
     @app.post('/api/chats')
     async def create_chat():
